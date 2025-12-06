@@ -34,7 +34,7 @@ const TrackList = ({ tracks, onPlay, currentTrack, isPlaying, onTogglePlay, hide
 
         try {
             const newStatus = !track.is_public;
-            await client.put(`/ tracks / ${track.id}/publish?publish=${newStatus}`);
+            await client.put(`/tracks/${track.id}/publish?publish=${newStatus}`);
 
             // Update local state to reflect change immediately
             setLocalTracks(prev => prev.map(t =>
