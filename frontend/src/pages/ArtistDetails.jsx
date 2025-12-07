@@ -7,24 +7,26 @@ import { useAuth } from '../context/AuthContext';
 import { useUI } from '../context/UIContext';
 
 const ArtistDetails = ({ onPlay, currentTrack, isPlaying, onTogglePlay }) => {
-    const { artistName } = useParams();
+    const { artistId } = useParams();
     const { user } = useAuth();
     const { showToast } = useUI();
     const [artist, setArtist] = useState(null);
     const [loading, setLoading] = useState(true);
     const [isEditing, setIsEditing] = useState(false);
     const [editBio, setEditBio] = useState('');
+    const [editName, setEditName] = useState('');
     const [editImage, setEditImage] = useState(null);
 
     useEffect(() => {
         fetchArtist();
-    }, [artistName]);
+    }, [artistId]);
 
     const fetchArtist = async () => {
         try {
-            const res = await client.get(`/artists/${encodeURIComponent(artistName)}`);
+            const res = await client.get(`/artists/${artistId}`);
             setArtist(res.data);
             setEditBio(res.data.bio || '');
+            setEditName(res.data.name || '');
         } catch (error) {
             console.error('Error fetching artist:', error);
         } finally {
@@ -35,18 +37,19 @@ const ArtistDetails = ({ onPlay, currentTrack, isPlaying, onTogglePlay }) => {
     const handleSave = async () => {
         try {
             const formData = new FormData();
-            formData.append('name', artistName);
+            formData.append('name', editName);
             formData.append('bio', editBio);
             if (editImage) {
                 formData.append('image', editImage);
             }
 
-            const res = await client.put('/artists', formData, {
+            const res = await client.put(`/artists/${artistId}`, formData, {
                 headers: { 'Content-Type': 'multipart/form-data' }
             });
 
             setArtist(prev => ({ 
                 ...prev, 
+                name: res.data.name,
                 bio: res.data.bio,
                 image_path: res.data.image_path 
             }));
@@ -110,11 +113,14 @@ const ArtistDetails = ({ onPlay, currentTrack, isPlaying, onTogglePlay }) => {
                     <span className="uppercase text-xs font-bold flex items-center gap-2">
                         Artist <div className="h-4 w-4 bg-blue-500 rounded-full flex items-center justify-center text-[8px]">✓</div>
                     </span>
-                    <h1 className="text-5xl md:text-7xl font-black mb-4 truncate">{artist.name}</h1>
                     
                     {isEditing ? (
                         <div className="mb-4 bg-[#282828] p-4 rounded-lg border border-gray-600">
-                            <label className="block text-xs text-gray-400 mb-1">Bio</label>
+                            <input 
+                                className="bg-[#3e3e3e] text-white p-2 rounded w-full mb-2 text-2xl font-bold"
+                                value={editName}
+                                onChange={(e) => setEditName(e.target.value)}
+                            />
                             <textarea
                                 value={editBio}
                                 onChange={(e) => setEditBio(e.target.value)}
@@ -127,7 +133,10 @@ const ArtistDetails = ({ onPlay, currentTrack, isPlaying, onTogglePlay }) => {
                             </div>
                         </div>
                     ) : (
-                        artist.bio && <p className="text-gray-300 max-w-2xl mb-4 line-clamp-3 hover:line-clamp-none transition-all cursor-pointer">{artist.bio}</p>
+                        <>
+                            <h1 className="text-5xl md:text-7xl font-black mb-4 truncate">{artist.name}</h1>
+                            {artist.bio && <p className="text-gray-300 max-w-2xl mb-4 line-clamp-3 hover:line-clamp-none transition-all cursor-pointer">{artist.bio}</p>}
+                        </>
                     )}
 
                     <div className="flex items-center gap-4 mt-2">
@@ -170,7 +179,7 @@ const ArtistDetails = ({ onPlay, currentTrack, isPlaying, onTogglePlay }) => {
                     {artist.albums.length > 0 ? (
                         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
                             {artist.albums.map((album, index) => (
-                                <Link to={`/album/${encodeURIComponent(album.title)}`} key={index} className="bg-[#181818] p-4 rounded-md hover:bg-[#282828] transition-colors cursor-pointer group block">
+                                <Link to={`/album/${album.id}`} key={index} className="bg-[#181818] p-4 rounded-md hover:bg-[#282828] transition-colors cursor-pointer group block">
                                     <div className="bg-[#333] aspect-square rounded-md mb-4 flex items-center justify-center shadow-lg overflow-hidden">
                                         {album.album_art_path ? (
                                             <img src={`http://localhost:8000/${album.album_art_path}`} className="w-full h-full object-cover" />

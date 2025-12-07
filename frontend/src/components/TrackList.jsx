@@ -147,7 +147,7 @@ const TrackList = ({ tracks, onPlay, currentTrack, isPlaying, onTogglePlay, hide
                                         {track.title}
                                     </span>
                                     <Link 
-                                        to={`/artist/${encodeURIComponent(track.artist)}`} 
+                                        to={`/artist/${track.artist_id}`} 
                                         onClick={e => e.stopPropagation()}
                                         className="text-sm text-[#b3b3b3] truncate hover:text-white hover:underline transition-colors"
                                     >
@@ -158,7 +158,7 @@ const TrackList = ({ tracks, onPlay, currentTrack, isPlaying, onTogglePlay, hide
 
                             {!hideAlbumColumn && (
                                 <div className="text-[#b3b3b3] text-sm truncate group-hover:text-white transition-colors hover:underline">
-                                    <Link to={`/album/${encodeURIComponent(track.album)}`} onClick={(e) => e.stopPropagation()}>
+                                    <Link to={`/album/${track.album_id}`} onClick={(e) => e.stopPropagation()}>
                                         {track.album || 'Unknown Album'}
                                     </Link>
                                 </div>

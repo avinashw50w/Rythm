@@ -4,11 +4,13 @@ import client from '../api/client';
 import TrackList from '../components/TrackList';
 import { FaUserCircle, FaMusic, FaCloudUploadAlt, FaEdit } from 'react-icons/fa';
 import { useAuth } from '../context/AuthContext';
+import { useUI } from '../context/UIContext';
 
 const Profile = ({ onPlay, currentTrack, isPlaying, onTogglePlay }) => {
     const { userId } = useParams();
-    const { user: authUser, setUser: setAuthUser } = useAuth();
-    const [user, setUser] = useState(null);
+    const { user: authUser, setUser } = useAuth();
+    const { showToast } = useUI();
+    const [user, setProfileUser] = useState(null);
     const [tracks, setTracks] = useState([]);
     const [albums, setAlbums] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -20,11 +22,8 @@ const Profile = ({ onPlay, currentTrack, isPlaying, onTogglePlay }) => {
         const fetchProfile = async () => {
             try {
                 let id = userId;
-                if (!id) {
-                    const storedUser = localStorage.getItem('user');
-                    if (storedUser) {
-                        id = JSON.parse(storedUser).id;
-                    }
+                if (!id && authUser) {
+                    id = authUser.id;
                 }
 
                 if (!id) return;
@@ -34,7 +33,7 @@ const Profile = ({ onPlay, currentTrack, isPlaying, onTogglePlay }) => {
                     client.get(`/users/${id}/tracks`),
                     client.get(`/users/${id}/albums`)
                 ]);
-                setUser(userRes.data);
+                setProfileUser(userRes.data);
                 setEditName(userRes.data.name);
                 setTracks(tracksRes.data);
                 setAlbums(albumsRes.data);
@@ -46,7 +45,7 @@ const Profile = ({ onPlay, currentTrack, isPlaying, onTogglePlay }) => {
         };
 
         fetchProfile();
-    }, [userId]);
+    }, [userId, authUser]);
 
     const isOwner = authUser && user && authUser.id === user.id;
 
@@ -62,18 +61,21 @@ const Profile = ({ onPlay, currentTrack, isPlaying, onTogglePlay }) => {
                 headers: { 'Content-Type': 'multipart/form-data' }
             });
 
-            setUser(prev => ({ ...prev, name: res.data.name, avatar_url: res.data.avatar_url }));
+            setProfileUser(prev => ({ ...prev, name: res.data.name, avatar_url: res.data.avatar_url }));
 
-            // Update auth context and localStorage
-            const updatedUser = { ...authUser, name: res.data.name, avatar_url: res.data.avatar_url };
-            setAuthUser(updatedUser);
-            localStorage.setItem('user', JSON.stringify(updatedUser));
+            // Update auth context
+            if (setUser) {
+                const updatedUser = { ...authUser, name: res.data.name, avatar_url: res.data.avatar_url };
+                setUser(updatedUser);
+                localStorage.setItem('user', JSON.stringify(updatedUser));
+            }
 
             setIsEditing(false);
             setEditAvatar(null);
+            showToast('Profile updated', 'success');
         } catch (error) {
             console.error('Error updating profile:', error);
-            alert('Failed to update profile');
+            showToast('Failed to update profile', 'error');
         }
     };
 
@@ -168,7 +170,7 @@ const Profile = ({ onPlay, currentTrack, isPlaying, onTogglePlay }) => {
                     {albums.length > 0 ? (
                         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
                             {albums.map((album, index) => (
-                                <Link to={`/album/${encodeURIComponent(album.name)}`} key={index} className="bg-[#181818] p-4 rounded-md hover:bg-[#282828] transition-colors cursor-pointer group block">
+                                <Link to={`/album/${album.id}`} key={index} className="bg-[#181818] p-4 rounded-md hover:bg-[#282828] transition-colors cursor-pointer group block">
                                     <div className="bg-[#333] aspect-square rounded-md mb-4 flex items-center justify-center shadow-lg overflow-hidden">
                                         {album.cover_art ? (
                                             <img src={`http://localhost:8000/${album.cover_art}`} className="w-full h-full object-cover" />
@@ -178,6 +180,7 @@ const Profile = ({ onPlay, currentTrack, isPlaying, onTogglePlay }) => {
                                     </div>
                                     <h3 className="font-bold text-white mb-1 truncate">{album.name}</h3>
                                     <p className="text-sm text-gray-400">{album.artist}</p>
+                                    <p className="text-xs text-gray-500 mt-1">{album.track_count} songs</p>
                                 </Link>
                             ))}
                         </div>

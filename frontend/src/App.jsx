@@ -127,7 +127,7 @@ function App() {
                 onUpdateTrack={handleUpdateTrack}
               />
             } />
-            <Route path="/album/:albumName" element={
+            <Route path="/album/:albumId" element={
               <AlbumDetails
                 onPlay={handlePlayTrack}
                 currentTrack={currentTrack}
@@ -135,7 +135,7 @@ function App() {
                 onTogglePlay={togglePlay}
               />
             } />
-            <Route path="/artist/:artistName" element={
+            <Route path="/artist/:artistId" element={
               <ArtistDetails
                 onPlay={handlePlayTrack}
                 currentTrack={currentTrack}

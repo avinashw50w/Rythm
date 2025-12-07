@@ -62,10 +62,8 @@ router.post('/', requireAuth, upload.single('file'), async (req, res) => {
         const fileSize = fs.statSync(absoluteFilePath).size;
         const metadata = await getAudioMetadata(absoluteFilePath);
 
-        // Use relative path for DB storage
         const relativeFilePath = `uploads/${file.filename}`;
 
-        // Extract album art from audio file if available
         let albumArtPath = null;
         try {
             const mm = await import('music-metadata');
@@ -85,7 +83,7 @@ router.post('/', requireAuth, upload.single('file'), async (req, res) => {
             console.log('Could not extract album art:', e.message);
         }
 
-        // Handle Artist Logic
+        // Handle Artist
         let artistName = req.body.artist || metadata.artist || 'Unknown Artist';
         let artistId;
         const existingArtist = db.prepare('SELECT id FROM artists WHERE name = ?').get(artistName);
@@ -96,7 +94,7 @@ router.post('/', requireAuth, upload.single('file'), async (req, res) => {
             artistId = artistRes.lastInsertRowid;
         }
 
-        // Handle Album Logic
+        // Handle Album
         let albumTitle = req.body.album || metadata.album || 'Unknown Album';
         let albumId = null;
 
@@ -104,25 +102,22 @@ router.post('/', requireAuth, upload.single('file'), async (req, res) => {
         
         if (existingAlbum) {
             albumId = existingAlbum.id;
-            // Update album art if needed
             if (!existingAlbum.album_art_path && albumArtPath) {
                 db.prepare('UPDATE albums SET album_art_path = ? WHERE id = ?').run(albumArtPath, albumId);
             }
         } else {
-            // Create new album
-            const albumResult = db.prepare('INSERT INTO albums (title, artist, artist_id, uploader_id, album_art_path) VALUES (?, ?, ?, ?, ?)')
-                .run(albumTitle, artistName, artistId, req.user.id, albumArtPath);
+            const albumResult = db.prepare('INSERT INTO albums (title, artist_id, uploader_id, album_art_path) VALUES (?, ?, ?, ?, ?)')
+                .run(albumTitle, artistId, req.user.id, albumArtPath);
             albumId = albumResult.lastInsertRowid;
         }
 
+        // Insert Track (using IDs only)
         const result = db.prepare(`
-            INSERT INTO tracks (title, artist, artist_id, album, album_id, genre, file_path, duration, bitrate, size, is_public, uploader_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO tracks (title, artist_id, album_id, genre, file_path, duration, bitrate, size, is_public, uploader_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
             req.body.title || metadata.title,
-            artistName, // Keep legacy string for now or redundancy
             artistId,
-            albumTitle, // Keep legacy string
             albumId,
             req.body.genre || metadata.genre,
             relativeFilePath,
@@ -134,7 +129,7 @@ router.post('/', requireAuth, upload.single('file'), async (req, res) => {
         );
 
         const track = db.prepare(`
-            SELECT t.*, a.album_art_path, ar.name as artist_name 
+            SELECT t.*, a.album_art_path, a.title as album, ar.name as artist 
             FROM tracks t 
             LEFT JOIN albums a ON t.album_id = a.id
             LEFT JOIN artists ar ON t.artist_id = ar.id
@@ -144,8 +139,10 @@ router.post('/', requireAuth, upload.single('file'), async (req, res) => {
         res.json({
             id: track.id,
             title: track.title,
-            artist: track.artist_name || track.artist,
+            artist: track.artist,
+            artist_id: track.artist_id,
             album: track.album,
+            album_id: track.album_id,
             album_art_path: track.album_art_path,
             message: 'Track uploaded successfully'
         });
@@ -155,7 +152,6 @@ router.post('/', requireAuth, upload.single('file'), async (req, res) => {
     }
 });
 
-// Configure multer for thumbnail uploads
 const thumbnailStorage = multer.diskStorage({
     destination: (req, file, cb) => {
         const uploadDir = path.join(__dirname, '..', '..', 'uploads', 'album_art');
@@ -166,74 +162,47 @@ const thumbnailStorage = multer.diskStorage({
     },
     filename: (req, file, cb) => {
         const ext = path.extname(file.originalname);
-        cb(null, `track_${req.params.id}${ext}`);
+        cb(null, `${uuidv4()}${ext}`);
     }
 });
 const uploadThumbnail = multer({ storage: thumbnailStorage });
 
-// Upload track thumbnail/album art
 router.post('/:id/thumbnail', requireAuth, uploadThumbnail.single('file'), (req, res) => {
     const track = db.prepare('SELECT * FROM tracks WHERE id = ?').get(req.params.id);
-
-    if (!track) {
-        return res.status(404).json({ detail: 'Track not found' });
-    }
-
-    if (track.uploader_id !== req.user.id) {
-        return res.status(403).json({ detail: 'Not authorized' });
-    }
-
-    if (!req.file) {
-        return res.status(400).json({ detail: 'No file uploaded' });
-    }
+    if (!track) return res.status(404).json({ detail: 'Track not found' });
+    if (track.uploader_id !== req.user.id) return res.status(403).json({ detail: 'Not authorized' });
+    if (!req.file) return res.status(400).json({ detail: 'No file uploaded' });
 
     const thumbnailPath = `uploads/album_art/${req.file.filename}`;
-    
-    // Update the ALBUM art
     if (track.album_id) {
          db.prepare('UPDATE albums SET album_art_path = ? WHERE id = ?').run(thumbnailPath, track.album_id);
     }
-
     res.json({ message: 'Thumbnail uploaded', album_art_path: thumbnailPath });
 });
 
-// Update track thumbnail for all tracks in an album
-router.post('/album/:albumName/thumbnail', requireAuth, uploadThumbnail.single('file'), (req, res) => {
-    const albumName = decodeURIComponent(req.params.albumName);
-
-    // Get album ID from name
-    const album = db.prepare('SELECT * FROM albums WHERE title = ?').get(albumName);
+router.post('/album/:id/thumbnail', requireAuth, uploadThumbnail.single('file'), (req, res) => {
+    const albumId = req.params.id;
+    const album = db.prepare('SELECT * FROM albums WHERE id = ?').get(albumId); 
     
-    if (!album) {
-         return res.status(404).json({ detail: 'Album not found' });
-    }
-
-    if (!req.file) {
-        return res.status(400).json({ detail: 'No file uploaded' });
-    }
+    if (!album) return res.status(404).json({ detail: 'Album not found' });
+    if (!req.file) return res.status(400).json({ detail: 'No file uploaded' });
 
     const thumbnailPath = `uploads/album_art/${req.file.filename}`;
-
-    // Update album cover
     db.prepare('UPDATE albums SET album_art_path = ? WHERE id = ?').run(thumbnailPath, album.id);
-
     res.json({ message: `Album art updated`, album_art_path: thumbnailPath });
 });
 
-//HV: Get all tracks
 router.get('/', optionalAuth, (req, res) => {
-    let tracks;
     const publicOnly = req.query.public_only === 'true';
-
-    // If public_only is requested, ignore user session and just return published tracks
     const baseQuery = `
-      SELECT t.*, u.name as uploader_name, a.album_art_path, ar.name as artist
+      SELECT t.*, u.name as uploader_name, a.album_art_path, a.title as album, ar.name as artist
       FROM tracks t 
       LEFT JOIN users u ON t.uploader_id = u.id
       LEFT JOIN albums a ON t.album_id = a.id
       LEFT JOIN artists ar ON t.artist_id = ar.id
     `;
 
+    let tracks;
     if (req.user && !publicOnly) {
         tracks = db.prepare(`${baseQuery} WHERE t.is_public = 1 OR t.uploader_id = ? ORDER BY t.id DESC`).all(req.user.id);
     } else {
@@ -253,10 +222,9 @@ router.get('/', optionalAuth, (req, res) => {
     res.json(result);
 });
 
-// Get track details
 router.get('/:id', optionalAuth, (req, res) => {
     const track = db.prepare(`
-    SELECT t.*, u.name as uploader_name, a.album_art_path, ar.name as artist
+    SELECT t.*, u.name as uploader_name, a.album_art_path, a.title as album, ar.name as artist
     FROM tracks t 
     LEFT JOIN users u ON t.uploader_id = u.id
     LEFT JOIN albums a ON t.album_id = a.id
@@ -264,10 +232,7 @@ router.get('/:id', optionalAuth, (req, res) => {
     WHERE t.id = ?
   `).get(req.params.id);
 
-    if (!track) {
-        return res.status(404).json({ detail: 'Track not found' });
-    }
-
+    if (!track) return res.status(404).json({ detail: 'Track not found' });
     if (!track.is_public && (!req.user || req.user.id !== track.uploader_id)) {
         return res.status(403).json({ detail: 'Access denied' });
     }
@@ -283,24 +248,15 @@ router.get('/:id', optionalAuth, (req, res) => {
     });
 });
 
-// Stream track
 router.get('/:id/stream', (req, res) => {
-    // Ensure CORS headers are set for audio context
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
 
-    const track = db.prepare('SELECT * FROM tracks WHERE id = ?').get(req.params.id);
+    const track = db.prepare('SELECT file_path FROM tracks WHERE id = ?').get(req.params.id);
+    if (!track) return res.status(404).json({ detail: 'Track not found' });
 
-    if (!track) {
-        return res.status(404).json({ detail: 'Track not found' });
-    }
-
-    // Simplified path resolution
     const absolutePath = path.join(__dirname, '..', '..', track.file_path);
-
-    if (!fs.existsSync(absolutePath)) {
-        return res.status(404).json({ detail: 'File not found on server' });
-    }
+    if (!fs.existsSync(absolutePath)) return res.status(404).json({ detail: 'File not found on server' });
 
     const ext = path.extname(absolutePath).toLowerCase();
     let contentType = 'audio/mpeg';
@@ -313,17 +269,10 @@ router.get('/:id/stream', (req, res) => {
     res.sendFile(absolutePath);
 });
 
-// Update track metadata
 router.put('/:id', requireAuth, (req, res) => {
     const track = db.prepare('SELECT * FROM tracks WHERE id = ?').get(req.params.id);
-
-    if (!track) {
-        return res.status(404).json({ detail: 'Track not found' });
-    }
-
-    if (track.uploader_id !== req.user.id) {
-        return res.status(403).json({ detail: 'Not authorized' });
-    }
+    if (!track) return res.status(404).json({ detail: 'Track not found' });
+    if (track.uploader_id !== req.user.id) return res.status(403).json({ detail: 'Not authorized' });
 
     const { title, artist, album, genre } = req.body;
 
@@ -338,33 +287,31 @@ router.put('/:id', requireAuth, (req, res) => {
         }
     }
 
-    // Update tracks table
     db.prepare(`
         UPDATE tracks 
         SET title = COALESCE(?, title),
-            artist = COALESCE(?, artist),
             artist_id = COALESCE(?, artist_id),
-            album = COALESCE(?, album),
             genre = COALESCE(?, genre)
         WHERE id = ?
-    `).run(title || null, artist || null, artistId || null, album || null, genre || null, req.params.id);
+    `).run(title || null, artistId || null, genre || null, req.params.id);
 
-    // If album name changed, update album_id (and artist_id on album)
-    if (album && album !== track.album) {
+    const currentAlbum = db.prepare('SELECT title FROM albums WHERE id = ?').get(track.album_id);
+    
+    if (album && (!currentAlbum || album !== currentAlbum.title)) {
         let albumId;
-        const existingAlbum = db.prepare('SELECT id FROM albums WHERE title = ?').get(album);
+        const existingAlbum = db.prepare('SELECT id FROM albums WHERE title = ? AND artist_id = ?').get(album, artistId);
         if (existingAlbum) {
             albumId = existingAlbum.id;
         } else {
-            const albumResult = db.prepare('INSERT INTO albums (title, artist, artist_id, uploader_id) VALUES (?, ?, ?, ?)')
-                .run(album, artist || track.artist, artistId, req.user.id);
+            const albumResult = db.prepare('INSERT INTO albums (title, artist_id, uploader_id) VALUES (?, ?, ?)')
+                .run(album, artistId, req.user.id);
             albumId = albumResult.lastInsertRowid;
         }
         db.prepare('UPDATE tracks SET album_id = ? WHERE id = ?').run(albumId, req.params.id);
     }
 
     const updatedTrack = db.prepare(`
-        SELECT t.*, a.album_art_path, ar.name as artist 
+        SELECT t.*, a.album_art_path, a.title as album, ar.name as artist 
         FROM tracks t 
         LEFT JOIN albums a ON t.album_id = a.id 
         LEFT JOIN artists ar ON t.artist_id = ar.id
@@ -373,35 +320,20 @@ router.put('/:id', requireAuth, (req, res) => {
     res.json(updatedTrack);
 });
 
-// Publish/unpublish track
 router.put('/:id/publish', requireAuth, (req, res) => {
     const track = db.prepare('SELECT * FROM tracks WHERE id = ?').get(req.params.id);
-
-    if (!track) {
-        return res.status(404).json({ detail: 'Track not found' });
-    }
-
-    if (track.uploader_id !== req.user.id) {
-        return res.status(403).json({ detail: 'Not authorized' });
-    }
+    if (!track) return res.status(404).json({ detail: 'Track not found' });
+    if (track.uploader_id !== req.user.id) return res.status(403).json({ detail: 'Not authorized' });
 
     const publish = req.query.publish === 'true' ? 1 : 0;
     db.prepare('UPDATE tracks SET is_public = ? WHERE id = ?').run(publish, req.params.id);
-
     res.json({ message: 'Track publish status updated', is_public: !!publish });
 });
 
-// Delete track
 router.delete('/:id', requireAuth, (req, res) => {
     const track = db.prepare('SELECT * FROM tracks WHERE id = ?').get(req.params.id);
-
-    if (!track) {
-        return res.status(404).json({ detail: 'Track not found' });
-    }
-
-    if (track.uploader_id !== req.user.id) {
-        return res.status(403).json({ detail: 'Not authorized' });
-    }
+    if (!track) return res.status(404).json({ detail: 'Track not found' });
+    if (track.uploader_id !== req.user.id) return res.status(403).json({ detail: 'Not authorized' });
 
     db.prepare('DELETE FROM playlist_tracks WHERE track_id = ?').run(req.params.id);
     db.prepare('DELETE FROM favorites WHERE track_id = ?').run(req.params.id);
@@ -409,13 +341,8 @@ router.delete('/:id', requireAuth, (req, res) => {
 
     const absolutePath = path.join(__dirname, '..', '..', track.file_path);
     if (fs.existsSync(absolutePath)) {
-        try {
-            fs.unlinkSync(absolutePath);
-        } catch (e) {
-            console.error("Could not delete file", e);
-        }
+        try { fs.unlinkSync(absolutePath); } catch (e) { console.error("Error deleting file", e); }
     }
-
     res.json({ message: 'Track deleted' });
 });
 

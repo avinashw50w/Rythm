@@ -249,13 +249,13 @@ const TrackDetails = ({ onPlay, currentTrack, isPlaying, onTogglePlay, onUpdateT
                             <div className="flex items-center gap-2 text-gray-300 font-medium text-sm md:text-base">
                                 {track.artist && (
                                     <>
-                                        <Link to={`/artist/${encodeURIComponent(track.artist)}`} className="text-white hover:underline cursor-pointer">{track.artist}</Link>
+                                        <Link to={`/artist/${track.artist_id}`} className="text-white hover:underline cursor-pointer">{track.artist}</Link>
                                         <span>•</span>
                                     </>
                                 )}
                                 {track.album && (
                                     <>
-                                        <Link to={`/album/${encodeURIComponent(track.album)}`} className="hover:underline cursor-pointer">{track.album}</Link>
+                                        <Link to={`/album/${track.album_id}`} className="hover:underline cursor-pointer">{track.album}</Link>
                                         <span>•</span>
                                     </>
                                 )}
@@ -333,7 +333,7 @@ const TrackDetails = ({ onPlay, currentTrack, isPlaying, onTogglePlay, onUpdateT
                     <h2 className="text-2xl font-bold mb-4">Credits</h2>
                     <div className="bg-[#181818] rounded-lg p-6 space-y-4">
                         <div>
-                            <Link to={`/artist/${encodeURIComponent(track.artist)}`} className="text-white font-bold hover:underline block">{track.artist || 'Unknown Artist'}</Link>
+                            <Link to={`/artist/${track.artist_id}`} className="text-white font-bold hover:underline block">{track.artist || 'Unknown Artist'}</Link>
                             <p className="text-sm text-gray-400">Main Artist</p>
                         </div>
                         <div>

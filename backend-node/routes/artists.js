@@ -23,66 +23,36 @@ const artistStorage = multer.diskStorage({
 
 const uploadArtistImage = multer({ storage: artistStorage });
 
-// Get Artist Details
-router.get('/:name', optionalAuth, (req, res) => {
-    const artistName = decodeURIComponent(req.params.name);
+// Get Artist Details by ID
+router.get('/:id', optionalAuth, (req, res) => {
+    const artistId = req.params.id;
 
-    // 1. Get Artist Metadata from 'artists' table
-    let artist = db.prepare('SELECT * FROM artists WHERE name = ?').get(artistName);
+    // 1. Get Artist Metadata
+    const artist = db.prepare('SELECT * FROM artists WHERE id = ?').get(artistId);
 
-    // If artist doesn't exist, check if we need to create a stub or return 404
     if (!artist) {
-        // Fallback: check if any tracks use this string (legacy support)
-        const hasTracks = db.prepare('SELECT 1 FROM tracks WHERE artist = ?').get(artistName);
-        if (hasTracks) {
-             artist = { id: null, name: artistName, bio: '', image_path: null };
-        } else {
-             return res.status(404).json({ detail: 'Artist not found' });
-        }
+        return res.status(404).json({ detail: 'Artist not found' });
     }
 
     // 2. Fetch public tracks
-    // Prefer artist_id if available
-    let tracks;
-    if (artist.id) {
-        tracks = db.prepare(`
-            SELECT t.*, a.album_art_path, ar.name as artist 
-            FROM tracks t
-            LEFT JOIN albums a ON t.album_id = a.id
-            JOIN artists ar ON t.artist_id = ar.id
-            WHERE t.artist_id = ? AND t.is_public = 1
-            ORDER BY t.id DESC
-        `).all(artist.id);
-    } else {
-        tracks = db.prepare(`
-            SELECT t.*, a.album_art_path, t.artist 
-            FROM tracks t
-            LEFT JOIN albums a ON t.album_id = a.id
-            WHERE t.artist = ? AND t.is_public = 1
-            ORDER BY t.id DESC
-        `).all(artistName);
-    }
+    const tracks = db.prepare(`
+        SELECT t.*, a.album_art_path, a.title as album, ar.name as artist 
+        FROM tracks t
+        LEFT JOIN albums a ON t.album_id = a.id
+        JOIN artists ar ON t.artist_id = ar.id
+        WHERE t.artist_id = ? AND t.is_public = 1
+        ORDER BY t.id DESC
+    `).all(artistId);
 
-    // 3. Fetch albums (public ones or containing public tracks)
-    let albums;
-    if (artist.id) {
-        albums = db.prepare(`
-            SELECT DISTINCT a.id, a.title, ar.name as artist, a.album_art_path, COUNT(t.id) as track_count
-            FROM albums a
-            JOIN artists ar ON a.artist_id = ar.id
-            JOIN tracks t ON a.id = t.album_id
-            WHERE a.artist_id = ? AND t.is_public = 1
-            GROUP BY a.id
-        `).all(artist.id);
-    } else {
-        albums = db.prepare(`
-            SELECT DISTINCT a.id, a.title, a.artist, a.album_art_path, COUNT(t.id) as track_count
-            FROM albums a
-            JOIN tracks t ON a.id = t.album_id
-            WHERE a.artist = ? AND t.is_public = 1
-            GROUP BY a.id
-        `).all(artistName);
-    }
+    // 3. Fetch albums
+    const albums = db.prepare(`
+        SELECT DISTINCT a.id, a.title, ar.name as artist, a.artist_id, a.album_art_path, COUNT(t.id) as track_count
+        FROM albums a
+        JOIN artists ar ON a.artist_id = ar.id
+        LEFT JOIN tracks t ON a.id = t.album_id
+        WHERE a.artist_id = ? 
+        GROUP BY a.id
+    `).all(artistId);
 
     // Get favorite IDs if logged in
     const favoriteIds = req.user
@@ -101,31 +71,28 @@ router.get('/:name', optionalAuth, (req, res) => {
     });
 });
 
-// Update Artist Info (create if not exists)
-router.put('/', requireAuth, uploadArtistImage.single('image'), (req, res) => {
-    const { name, bio } = req.body;
+// Update Artist Info
+router.put('/:id', requireAuth, uploadArtistImage.single('image'), (req, res) => {
+    const artistId = req.params.id;
+    const { bio, name } = req.body; 
     
-    if (!name) return res.status(400).json({ detail: 'Artist name is required' });
-
     let imagePath = undefined;
     if (req.file) {
         imagePath = `uploads/artists/${req.file.filename}`;
     }
 
-    const existing = db.prepare('SELECT * FROM artists WHERE name = ?').get(name);
+    const existing = db.prepare('SELECT * FROM artists WHERE id = ?').get(artistId);
+    if (!existing) return res.status(404).json({ detail: 'Artist not found' });
 
-    if (existing) {
-        db.prepare(`
-            UPDATE artists 
-            SET bio = COALESCE(?, bio),
-                image_path = COALESCE(?, image_path)
-            WHERE id = ?
-        `).run(bio || null, imagePath || null, existing.id);
-    } else {
-        db.prepare('INSERT INTO artists (name, bio, image_path) VALUES (?, ?, ?)').run(name, bio || '', imagePath || null);
-    }
+    db.prepare(`
+        UPDATE artists 
+        SET bio = COALESCE(?, bio),
+            name = COALESCE(?, name),
+            image_path = COALESCE(?, image_path)
+        WHERE id = ?
+    `).run(bio || null, name || null, imagePath || null, artistId);
 
-    const updated = db.prepare('SELECT * FROM artists WHERE name = ?').get(name);
+    const updated = db.prepare('SELECT * FROM artists WHERE id = ?').get(artistId);
     res.json(updated);
 });
 

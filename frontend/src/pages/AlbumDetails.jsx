@@ -7,7 +7,7 @@ import TrackList from '../components/TrackList';
 import { FaPlay, FaPause, FaEdit, FaSave, FaTimes, FaMusic, FaGlobe, FaLock, FaTrash, FaCamera } from 'react-icons/fa';
 
 const AlbumDetails = ({ onPlay, currentTrack, isPlaying, onTogglePlay }) => {
-    const { albumName } = useParams(); // Note: Encoded in URL
+    const { albumId } = useParams();
     const navigate = useNavigate();
     const { user } = useAuth();
     const { showToast, confirmAction } = useUI();
@@ -23,12 +23,11 @@ const AlbumDetails = ({ onPlay, currentTrack, isPlaying, onTogglePlay }) => {
 
     useEffect(() => {
         fetchAlbum();
-    }, [albumName]);
+    }, [albumId]);
 
     const fetchAlbum = async () => {
         try {
-            // albumName might contain spaces or special chars
-            const res = await client.get(`/albums/${encodeURIComponent(albumName)}`);
+            const res = await client.get(`/albums/${albumId}`);
             setAlbum(res.data);
             setEditForm({
                 new_name: res.data.name,
@@ -49,15 +48,11 @@ const AlbumDetails = ({ onPlay, currentTrack, isPlaying, onTogglePlay }) => {
         if(e) e.preventDefault();
         setSaving(true);
         try {
-            const res = await client.put(`/albums/${encodeURIComponent(albumName)}`, editForm);
+            const res = await client.put(`/albums/${albumId}`, editForm);
             setIsEditing(false); // Close immediately
             
-            // If name changed, we should navigate to new URL
-            if (editForm.new_name !== albumName) {
-                navigate(`/album/${encodeURIComponent(editForm.new_name)}`);
-            } else {
-                setAlbum(prev => ({ ...prev, name: editForm.new_name, artist: editForm.artist }));
-            }
+            // If name changed, updating local state is enough since ID is persistent
+            setAlbum(prev => ({ ...prev, name: editForm.new_name, artist: editForm.artist }));
             showToast('Album updated successfully', 'success');
         } catch (error) {
             console.error('Error updating album:', error);
@@ -75,7 +70,7 @@ const AlbumDetails = ({ onPlay, currentTrack, isPlaying, onTogglePlay }) => {
         formData.append('file', file);
 
         try {
-            const res = await client.post(`/tracks/album/${encodeURIComponent(albumName)}/thumbnail`, formData, {
+            const res = await client.post(`/tracks/album/${albumId}/thumbnail`, formData, {
                 headers: { 'Content-Type': 'multipart/form-data' }
             });
             setAlbum(prev => ({ ...prev, album_art_path: res.data.album_art_path }));
@@ -97,7 +92,7 @@ const AlbumDetails = ({ onPlay, currentTrack, isPlaying, onTogglePlay }) => {
 
         confirmAction(`Are you sure you want to ${action} this album?`, async () => {
             try {
-                await client.put(`/albums/${encodeURIComponent(albumName)}/publish`, { is_public: newStatus });
+                await client.put(`/albums/${albumId}/publish`, { is_public: newStatus });
                 // Update local state
                 setAlbum(prev => ({
                     ...prev,
@@ -114,7 +109,7 @@ const AlbumDetails = ({ onPlay, currentTrack, isPlaying, onTogglePlay }) => {
     const handleDeleteAlbum = async () => {
         confirmAction(`Are you sure you want to delete the album "${album.name}"? This will delete ALL tracks in it. This cannot be undone.`, async () => {
             try {
-                await client.delete(`/albums/${encodeURIComponent(albumName)}`);
+                await client.delete(`/albums/${albumId}`);
                 navigate('/profile');
                 showToast('Album deleted', 'success');
             } catch (error) {
@@ -202,7 +197,7 @@ const AlbumDetails = ({ onPlay, currentTrack, isPlaying, onTogglePlay }) => {
                     <div className="flex items-center gap-2 text-sm font-medium text-gray-300 mt-2">
                         {album.artist && (
                             <>
-                                <Link to={`/artist/${encodeURIComponent(album.artist)}`} className="text-white font-bold hover:underline cursor-pointer">{album.artist}</Link>
+                                <Link to={`/artist/${album.artist_id}`} className="text-white font-bold hover:underline cursor-pointer">{album.artist}</Link>
                                 <span>•</span>
                             </>
                         )}
