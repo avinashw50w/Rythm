@@ -11,19 +11,51 @@ import Profile from './pages/Profile';
 import TrackDetails from './pages/TrackDetails';
 import AlbumDetails from './pages/AlbumDetails';
 import LikedSongs from './pages/LikedSongs';
+import PlaylistDetails from './pages/PlaylistDetails';
 
 import { AuthProvider } from './context/AuthContext';
 
 function App() {
   const [currentTrack, setCurrentTrack] = useState(null);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [queue, setQueue] = useState([]);
+  const [currentIndex, setCurrentIndex] = useState(-1);
 
-  const handlePlayTrack = (track) => {
+  const handlePlayTrack = (track, trackList = []) => {
     setCurrentTrack(track);
-    setIsPlaying(true); // Set isPlaying to true when a track starts playing
+    setIsPlaying(true);
+    
+    // If a new list is provided (context switch), replace queue
+    if (trackList.length > 0) {
+      setQueue(trackList);
+      const idx = trackList.findIndex(t => t.id === track.id);
+      setCurrentIndex(idx !== -1 ? idx : 0);
+    } else if (queue.length > 0) {
+        // Playing from current queue, just update index if found
+        const idx = queue.findIndex(t => t.id === track.id);
+        if (idx !== -1) setCurrentIndex(idx);
+    }
   };
 
-  const togglePlay = () => { // Added togglePlay function
+  const playNext = () => {
+    if (queue.length > 0 && currentIndex < queue.length - 1) {
+      const nextIndex = currentIndex + 1;
+      setCurrentTrack(queue[nextIndex]);
+      setCurrentIndex(nextIndex);
+      setIsPlaying(true);
+    }
+  };
+
+  const playPrev = () => {
+    if (queue.length > 0 && currentIndex > 0) {
+      const prevIndex = currentIndex - 1;
+      setCurrentTrack(queue[prevIndex]);
+      setCurrentIndex(prevIndex);
+      setIsPlaying(true);
+    }
+  };
+
+  const togglePlay = () => {
     setIsPlaying(prev => !prev);
   };
 
@@ -35,6 +67,10 @@ function App() {
           isPlaying={isPlaying}
           onTogglePlay={togglePlay}
           setIsPlaying={setIsPlaying}
+          onNext={playNext}
+          onPrev={playPrev}
+          hasNext={currentIndex < queue.length - 1}
+          hasPrev={currentIndex > 0}
         >
           <Routes>
             <Route path="/" element={
@@ -90,7 +126,14 @@ function App() {
                 onTogglePlay={togglePlay}
               />
             } />
-            {/* Add other routes here */}
+            <Route path="/playlist/:playlistId" element={
+              <PlaylistDetails
+                onPlay={handlePlayTrack}
+                currentTrack={currentTrack}
+                isPlaying={isPlaying}
+                onTogglePlay={togglePlay}
+              />
+            } />
           </Routes>
         </Layout>
       </Router>

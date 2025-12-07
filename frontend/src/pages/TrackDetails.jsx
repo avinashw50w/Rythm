@@ -2,15 +2,18 @@ import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import client from '../api/client';
 import { useAuth } from '../context/AuthContext';
-import { FaPlay, FaPause, FaEdit, FaSave, FaTimes, FaMusic, FaGlobe, FaLock } from 'react-icons/fa';
+import { useUI } from '../context/UIContext';
+import { FaPlay, FaPause, FaEdit, FaSave, FaTimes, FaMusic, FaGlobe, FaLock, FaCamera, FaTrash } from 'react-icons/fa';
 
 const TrackDetails = ({ onPlay, currentTrack, isPlaying, onTogglePlay }) => {
     const { trackId } = useParams();
     const navigate = useNavigate();
     const { user } = useAuth();
+    const { showToast, confirmAction } = useUI();
     const [track, setTrack] = useState(null);
     const [loading, setLoading] = useState(true);
     const [isEditing, setIsEditing] = useState(false);
+    const [saving, setSaving] = useState(false);
     const [editForm, setEditForm] = useState({
         title: '',
         artist: '',
@@ -18,46 +21,102 @@ const TrackDetails = ({ onPlay, currentTrack, isPlaying, onTogglePlay }) => {
         genre: ''
     });
 
-    useEffect(() => {
-        const fetchTrack = async () => {
-            try {
-                const res = await client.get(`/tracks/${trackId}`);
-                setTrack(res.data);
-                setEditForm({
-                    title: res.data.title || '',
-                    artist: res.data.artist || '',
-                    album: res.data.album || '',
-                    genre: res.data.genre || ''
-                });
-            } catch (error) {
-                console.error('Error fetching track:', error);
-                if (error.response && error.response.status === 404) {
-                    navigate('/');
-                }
-            } finally {
-                setLoading(false);
+    const fetchTrack = async () => {
+        try {
+            const res = await client.get(`/tracks/${trackId}`);
+            setTrack(res.data);
+            setEditForm({
+                title: res.data.title || '',
+                artist: res.data.artist || '',
+                album: res.data.album || '',
+                genre: res.data.genre || ''
+            });
+        } catch (error) {
+            console.error('Error fetching track:', error);
+            if (error.response && error.response.status === 404) {
+                navigate('/');
             }
-        };
+        } finally {
+            setLoading(false);
+        }
+    };
 
+    useEffect(() => {
         fetchTrack();
     }, [trackId, navigate]);
 
-    const handleSave = async () => {
+    const handleSave = async (e) => {
+        // Prevent default if called from a form, though we use type="button" now to be safe
+        if (e) e.preventDefault();
+        
+        setSaving(true);
         try {
             const res = await client.put(`/tracks/${trackId}`, editForm);
-            setTrack(prev => ({ ...prev, ...editForm }));
+            setTrack(prev => ({ ...prev, ...res.data }));
             setIsEditing(false);
+            showToast('Track updated successfully', 'success');
         } catch (error) {
             console.error('Error updating track:', error);
-            alert('Failed to update track');
+            showToast('Failed to update track', 'error');
+        } finally {
+            setSaving(false);
         }
+    };
+
+    const handleThumbnailUpload = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const formData = new FormData();
+        formData.append('file', file);
+
+        try {
+            const res = await client.post(`/tracks/${trackId}/thumbnail`, formData, {
+                headers: { 'Content-Type': 'multipart/form-data' }
+            });
+            setTrack(prev => ({ ...prev, album_art_path: res.data.album_art_path }));
+            showToast('Thumbnail uploaded', 'success');
+        } catch (error) {
+            console.error('Error uploading thumbnail:', error);
+            showToast('Failed to upload thumbnail', 'error');
+        }
+    };
+
+    const togglePublish = async () => {
+        const newStatus = !track.is_public;
+        const action = newStatus ? 'publish' : 'unpublish';
+
+        confirmAction(`Are you sure you want to ${action} this track?`, async () => {
+            try {
+                await client.put(`/tracks/${trackId}/publish?publish=${newStatus}`);
+                setTrack(prev => ({ ...prev, is_public: newStatus }));
+                showToast(`Track ${action}ed`, 'success');
+            } catch (error) {
+                console.error('Error updating publish status:', error);
+                showToast('Failed to update publish status', 'error');
+            }
+        }, `Confirm ${action}`);
+    };
+
+    const handleDelete = async () => {
+        confirmAction(`Are you sure you want to delete "${track.title}"? This cannot be undone.`, async () => {
+            try {
+                await client.delete(`/tracks/${trackId}`);
+                navigate('/profile');
+                showToast('Track deleted', 'success');
+            } catch (error) {
+                console.error('Error deleting track:', error);
+                showToast('Failed to delete track', 'error');
+            }
+        }, 'Delete Track');
     };
 
     const handlePlay = () => {
         if (currentTrack?.id === track.id) {
             onTogglePlay();
         } else {
-            onPlay(track);
+            // When playing from detail view, queue only this track
+            onPlay(track, [track]);
         }
     };
 
@@ -78,18 +137,33 @@ const TrackDetails = ({ onPlay, currentTrack, isPlaying, onTogglePlay }) => {
                     ) : (
                         <FaMusic size={80} className="text-gray-600" />
                     )}
-                    <button
-                        onClick={handlePlay}
-                        className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                    >
-                        <div className="bg-green-500 rounded-full p-4 shadow-lg transform hover:scale-105 transition-transform">
-                            {isCurrentTrack && isPlaying ? (
-                                <FaPause className="text-black text-xl" />
-                            ) : (
-                                <FaPlay className="text-black text-xl ml-1" />
+
+                    {/* Overlay with play button and optional upload for owners */}
+                    <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="flex gap-4">
+                            <button onClick={handlePlay}>
+                                <div className="bg-green-500 rounded-full p-4 shadow-lg transform hover:scale-105 transition-transform">
+                                    {isCurrentTrack && isPlaying ? (
+                                        <FaPause className="text-black text-xl" />
+                                    ) : (
+                                        <FaPlay className="text-black text-xl ml-1" />
+                                    )}
+                                </div>
+                            </button>
+
+                            {isOwner && (
+                                <label className="bg-white/20 rounded-full p-4 shadow-lg transform hover:scale-105 transition-transform cursor-pointer">
+                                    <FaCamera className="text-white text-xl" />
+                                    <input
+                                        type="file"
+                                        accept="image/*"
+                                        className="hidden"
+                                        onChange={handleThumbnailUpload}
+                                    />
+                                </label>
                             )}
                         </div>
-                    </button>
+                    </div>
                 </div>
 
                 {/* Info */}
@@ -144,10 +218,16 @@ const TrackDetails = ({ onPlay, currentTrack, isPlaying, onTogglePlay }) => {
                                 </div>
                             </div>
                             <div className="flex gap-3 pt-2">
-                                <button onClick={handleSave} className="bg-green-500 text-black px-6 py-2 rounded-full font-bold hover:scale-105 transition-transform flex items-center gap-2">
-                                    <FaSave /> Save
+                                {/* Use type="button" and explicit onClick to prevent double-click issues often found with form submits */}
+                                <button 
+                                    type="button" 
+                                    onClick={handleSave} 
+                                    disabled={saving} 
+                                    className="bg-green-500 text-black px-6 py-2 rounded-full font-bold hover:scale-105 transition-transform flex items-center gap-2 disabled:opacity-50 disabled:scale-100"
+                                >
+                                    <FaSave /> {saving ? 'Saving...' : 'Save'}
                                 </button>
-                                <button onClick={() => setIsEditing(false)} className="bg-transparent border border-gray-500 text-white px-6 py-2 rounded-full font-bold hover:border-white transition-colors flex items-center gap-2">
+                                <button type="button" onClick={() => setIsEditing(false)} className="bg-transparent border border-gray-500 text-white px-6 py-2 rounded-full font-bold hover:border-white transition-colors flex items-center gap-2">
                                     <FaTimes /> Cancel
                                 </button>
                             </div>
@@ -189,13 +269,39 @@ const TrackDetails = ({ onPlay, currentTrack, isPlaying, onTogglePlay }) => {
                             </button>
 
                             {isOwner && (
-                                <button
-                                    onClick={() => setIsEditing(true)}
-                                    className="text-gray-400 hover:text-white transition-colors p-2"
-                                    title="Edit Details"
-                                >
-                                    <FaEdit size={24} />
-                                </button>
+                                <>
+                                    <button
+                                        onClick={togglePublish}
+                                        className={`flex items-center gap-2 text-sm font-bold px-4 py-2 rounded-full border ${track.is_public ? 'border-green-500 text-green-500' : 'border-gray-500 text-gray-400'}`}
+                                        title={track.is_public ? 'Click to make private' : 'Click to publish'}
+                                    >
+                                        {track.is_public ? (
+                                            <>
+                                                <FaGlobe /> Published
+                                            </>
+                                        ) : (
+                                            <>
+                                                <FaLock /> Private
+                                            </>
+                                        )}
+                                    </button>
+
+                                    <button
+                                        onClick={() => setIsEditing(true)}
+                                        className="text-gray-400 hover:text-white transition-colors p-2"
+                                        title="Edit Details"
+                                    >
+                                        <FaEdit size={24} />
+                                    </button>
+
+                                    <button
+                                        onClick={handleDelete}
+                                        className="text-gray-400 hover:text-red-500 transition-colors p-2"
+                                        title="Delete Track"
+                                    >
+                                        <FaTrash size={24} />
+                                    </button>
+                                </>
                             )}
                         </div>
                     )}
@@ -226,7 +332,7 @@ const TrackDetails = ({ onPlay, currentTrack, isPlaying, onTogglePlay }) => {
                         <div className="pt-4 border-t border-gray-700">
                             <div className="flex justify-between text-sm text-gray-400 mb-1">
                                 <span>Format</span>
-                                <span>MP3 / {track.bitrate ? Math.round(parseInt(track.bitrate) / 1000) : '?'}kbps</span>
+                                <span>MP3 / {track.bitrate}</span>
                             </div>
                             <div className="flex justify-between text-sm text-gray-400">
                                 <span>Size</span>

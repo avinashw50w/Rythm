@@ -14,8 +14,8 @@ const CreatePlaylist = () => {
 
         setLoading(true);
         try {
-            await client.post('/users/playlists', { name, is_public: false });
-            navigate('/library');
+            const res = await client.post(`/playlists/?name=${encodeURIComponent(name)}&is_public=false`);
+            navigate(`/playlist/${res.data.id}`);
         } catch (error) {
             console.error('Error creating playlist:', error);
             alert('Failed to create playlist');

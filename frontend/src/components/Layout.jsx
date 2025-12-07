@@ -3,7 +3,7 @@ import Sidebar from './Sidebar';
 import Player from './Player';
 import { useAuth } from '../context/AuthContext';
 
-const Layout = ({ children, currentTrack, isPlaying, onTogglePlay, setIsPlaying }) => {
+const Layout = ({ children, currentTrack, isPlaying, onTogglePlay, setIsPlaying, onNext, onPrev, hasNext, hasPrev }) => {
     const { user, logout } = useAuth();
 
     return (
@@ -12,7 +12,6 @@ const Layout = ({ children, currentTrack, isPlaying, onTogglePlay, setIsPlaying 
             <div className="flex-1 flex flex-col bg-[#121212] m-2 rounded-lg overflow-hidden relative">
                 {/* Top Bar placeholder */}
                 <header className="h-16 bg-[#101010] flex items-center px-8 sticky top-0 z-10 bg-opacity-90">
-                    {/* Navigation arrows, User profile, etc. */}
                     <div className="flex gap-4">
                         <button className="bg-black rounded-full p-1 text-gray-400 hover:text-white">{'<'}</button>
                         <button className="bg-black rounded-full p-1 text-gray-400 hover:text-white">{'>'}</button>
@@ -42,6 +41,10 @@ const Layout = ({ children, currentTrack, isPlaying, onTogglePlay, setIsPlaying 
                 isPlaying={isPlaying}
                 onTogglePlay={onTogglePlay}
                 setIsPlaying={setIsPlaying}
+                onNext={onNext}
+                onPrev={onPrev}
+                hasNext={hasNext}
+                hasPrev={hasPrev}
             />
         </div>
     );

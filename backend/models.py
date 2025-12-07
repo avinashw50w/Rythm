@@ -42,6 +42,7 @@ class Playlist(Base):
     name = Column(String, index=True)
     creator_id = Column(Integer, ForeignKey("users.id"))
     is_public = Column(Boolean, default=False)
+    thumbnail_path = Column(String, nullable=True)
 
     creator = relationship("User", back_populates="playlists")
     tracks = relationship("PlaylistTrack", back_populates="playlist")

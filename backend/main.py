@@ -10,26 +10,21 @@ env_path = Path(__file__).parent / ".env"
 load_dotenv(dotenv_path=env_path)
 
 from backend import models, database
-from backend.routers import auth, tracks, users, albums
+from backend.routers import auth, tracks, users, albums, playlists
 
 # Create tables
 models.Base.metadata.create_all(bind=database.engine)
 
 app = FastAPI(title="Spotify Clone API")
 
-# CORS
-origins = [
-    "http://localhost:5173",  # Vite default port
-    "http://localhost:5174",  # Vite fallback port
-    "http://localhost:3008",
-]
-
+# CORS - Allow all origins for audio streaming with Web Audio API
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
+    allow_origins=["*"],  # Allow all origins for audio access
+    allow_credentials=False,  # Must be False when using wildcard
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
 
 # Mount static files for audio serving
@@ -40,6 +35,7 @@ app.include_router(auth.router)
 app.include_router(tracks.router)
 app.include_router(users.router)
 app.include_router(albums.router)
+app.include_router(playlists.router)
 
 @app.get("/")
 def read_root():

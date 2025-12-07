@@ -2,15 +2,20 @@ import React, { useEffect, useState } from 'react';
 import client from '../api/client';
 import { Link } from 'react-router-dom';
 import { FaMusic, FaHeart } from 'react-icons/fa';
+import { useAuth } from '../context/AuthContext';
 
 const Library = () => {
+    const { user } = useAuth();
     const [playlists, setPlaylists] = useState([]);
     const [favorites, setFavorites] = useState([]);
 
     useEffect(() => {
         const fetchData = async () => {
+            if (!user) return;
+            
             try {
-                const playlistsRes = await client.get('/users/playlists');
+                // Correct endpoint for listing user playlists
+                const playlistsRes = await client.get('/playlists');
                 setPlaylists(playlistsRes.data);
 
                 const favoritesRes = await client.get('/users/favorites');
@@ -21,7 +26,7 @@ const Library = () => {
         };
 
         fetchData();
-    }, []);
+    }, [user]);
 
     return (
         <div>
@@ -39,13 +44,17 @@ const Library = () => {
                 </Link>
 
                 {playlists.map(playlist => (
-                    <div key={playlist.id} className="bg-[#181818] p-4 rounded-md hover:bg-[#282828] transition-colors cursor-pointer group">
-                        <div className="bg-[#333] aspect-square rounded-md mb-4 flex items-center justify-center shadow-lg">
-                            <FaMusic size={48} className="text-gray-500" />
+                    <Link to={`/playlist/${playlist.id}`} key={playlist.id} className="bg-[#181818] p-4 rounded-md hover:bg-[#282828] transition-colors cursor-pointer group">
+                        <div className="bg-[#333] aspect-square rounded-md mb-4 flex items-center justify-center shadow-lg overflow-hidden">
+                            {playlist.thumbnail_path ? (
+                                <img src={`http://localhost:8000/${playlist.thumbnail_path}`} className="w-full h-full object-cover" />
+                            ) : (
+                                <FaMusic size={48} className="text-gray-500" />
+                            )}
                         </div>
                         <h3 className="font-bold text-white mb-1 truncate">{playlist.name}</h3>
-                        <p className="text-sm text-gray-400">By You</p>
-                    </div>
+                        <p className="text-sm text-gray-400">{playlist.track_count} songs</p>
+                    </Link>
                 ))}
             </div>
         </div>

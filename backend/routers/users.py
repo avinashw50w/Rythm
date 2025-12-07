@@ -1,13 +1,53 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 from backend import database, models, auth
 from pydantic import BaseModel
+import os
+import shutil
+from pathlib import Path
 
 router = APIRouter(
     prefix="/users",
     tags=["users"],
 )
+
+# Profile update endpoint
+@router.put("/profile")
+async def update_profile(
+    name: str = Form(...),
+    avatar: Optional[UploadFile] = File(None),
+    current_user: models.User = Depends(auth.get_current_user),
+    db: Session = Depends(database.get_db)
+):
+    # Update name
+    current_user.name = name
+    
+    # Handle avatar upload
+    if avatar:
+        avatar_dir = Path("uploads/avatars")
+        avatar_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Generate filename
+        ext = avatar.filename.split(".")[-1] if "." in avatar.filename else "jpg"
+        avatar_filename = f"user_{current_user.id}.{ext}"
+        avatar_path = avatar_dir / avatar_filename
+        
+        # Save file
+        with open(avatar_path, "wb") as f:
+            shutil.copyfileobj(avatar.file, f)
+        
+        current_user.avatar_url = f"http://localhost:8000/uploads/avatars/{avatar_filename}"
+    
+    db.commit()
+    db.refresh(current_user)
+    
+    return {
+        "id": current_user.id,
+        "name": current_user.name,
+        "email": current_user.email,
+        "avatar_url": current_user.avatar_url
+    }
 
 class PlaylistCreate(BaseModel):
     name: str

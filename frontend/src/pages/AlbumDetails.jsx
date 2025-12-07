@@ -2,16 +2,19 @@ import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import client from '../api/client';
 import { useAuth } from '../context/AuthContext';
+import { useUI } from '../context/UIContext';
 import TrackList from '../components/TrackList';
-import { FaPlay, FaPause, FaEdit, FaSave, FaTimes, FaMusic, FaGlobe, FaLock, FaTrash } from 'react-icons/fa';
+import { FaPlay, FaPause, FaEdit, FaSave, FaTimes, FaMusic, FaGlobe, FaLock, FaTrash, FaCamera } from 'react-icons/fa';
 
 const AlbumDetails = ({ onPlay, currentTrack, isPlaying, onTogglePlay }) => {
     const { albumName } = useParams(); // Note: Encoded in URL
     const navigate = useNavigate();
     const { user } = useAuth();
+    const { showToast, confirmAction } = useUI();
     const [album, setAlbum] = useState(null);
     const [loading, setLoading] = useState(true);
     const [isEditing, setIsEditing] = useState(false);
+    const [saving, setSaving] = useState(false);
     const [editForm, setEditForm] = useState({
         new_name: '',
         artist: '',
@@ -30,7 +33,7 @@ const AlbumDetails = ({ onPlay, currentTrack, isPlaying, onTogglePlay }) => {
             setEditForm({
                 new_name: res.data.name,
                 artist: res.data.artist || '',
-                genre: '' // Not returned by default aggregate, nice to have though
+                genre: '' 
             });
         } catch (error) {
             console.error('Error fetching album:', error);
@@ -42,19 +45,44 @@ const AlbumDetails = ({ onPlay, currentTrack, isPlaying, onTogglePlay }) => {
         }
     };
 
-    const handleSave = async () => {
+    const handleSave = async (e) => {
+        if(e) e.preventDefault();
+        setSaving(true);
         try {
             const res = await client.put(`/albums/${encodeURIComponent(albumName)}`, editForm);
+            setIsEditing(false); // Close immediately
+            
             // If name changed, we should navigate to new URL
             if (editForm.new_name !== albumName) {
                 navigate(`/album/${encodeURIComponent(editForm.new_name)}`);
             } else {
-                fetchAlbum(); // Refresh data
-                setIsEditing(false);
+                setAlbum(prev => ({ ...prev, name: editForm.new_name, artist: editForm.artist }));
             }
+            showToast('Album updated successfully', 'success');
         } catch (error) {
             console.error('Error updating album:', error);
-            alert('Failed to update album');
+            showToast('Failed to update album', 'error');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleThumbnailUpload = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const formData = new FormData();
+        formData.append('file', file);
+
+        try {
+            const res = await client.post(`/tracks/album/${encodeURIComponent(albumName)}/thumbnail`, formData, {
+                headers: { 'Content-Type': 'multipart/form-data' }
+            });
+            setAlbum(prev => ({ ...prev, album_art_path: res.data.album_art_path }));
+            showToast('Album art updated', 'success');
+        } catch (error) {
+            console.error('Error uploading thumbnail:', error);
+            showToast('Failed to upload thumbnail', 'error');
         }
     };
 
@@ -67,61 +95,75 @@ const AlbumDetails = ({ onPlay, currentTrack, isPlaying, onTogglePlay }) => {
         const newStatus = !isPublic;
         const action = newStatus ? "publish" : "unpublish";
 
-        if (!window.confirm(`Are you sure you want to ${action} this album?`)) {
-            return;
-        }
-
-        try {
-            await client.put(`/albums/${encodeURIComponent(albumName)}/publish`, { is_public: newStatus });
-            fetchAlbum();
-        } catch (error) {
-            console.error('Error publishing album:', error);
-        }
+        confirmAction(`Are you sure you want to ${action} this album?`, async () => {
+            try {
+                await client.put(`/albums/${encodeURIComponent(albumName)}/publish`, { is_public: newStatus });
+                // Update local state
+                setAlbum(prev => ({
+                    ...prev,
+                    tracks: prev.tracks.map(t => ({ ...t, is_public: newStatus }))
+                }));
+                showToast(`Album ${action}ed`, 'success');
+            } catch (error) {
+                console.error('Error publishing album:', error);
+                showToast('Error updating status', 'error');
+            }
+        }, `Confirm ${action}`);
     };
 
     const handleDeleteAlbum = async () => {
-        if (!window.confirm(`Are you sure you want to delete the album "${album.name}"? This will delete ALL tracks in it. This cannot be undone.`)) {
-            return;
-        }
-
-        try {
-            await client.delete(`/albums/${encodeURIComponent(albumName)}`);
-            navigate('/profile');
-        } catch (error) {
-            console.error("Error deleting album:", error);
-            alert("Failed to delete album");
-        }
+        confirmAction(`Are you sure you want to delete the album "${album.name}"? This will delete ALL tracks in it. This cannot be undone.`, async () => {
+            try {
+                await client.delete(`/albums/${encodeURIComponent(albumName)}`);
+                navigate('/profile');
+                showToast('Album deleted', 'success');
+            } catch (error) {
+                console.error("Error deleting album:", error);
+                showToast("Failed to delete album", 'error');
+            }
+        }, 'Delete Album');
     };
 
     const handlePlayAlbum = () => {
-        // If current track is from this album and playing, toggle pause
-        // Since we don't have "context" (playlist) ID fully implemented in player,
-        // we check if current track is in this album's track list.
         if (currentTrack && album.tracks.some(t => t.id === currentTrack.id)) {
             onTogglePlay();
             return;
         }
 
         if (album && album.tracks.length > 0) {
-            onPlay(album.tracks[0]);
+            // Queue entire album
+            onPlay(album.tracks[0], album.tracks);
         }
     };
 
     if (loading) return <div className="text-white p-8">Loading...</div>;
     if (!album) return <div className="text-white p-8">Album not found</div>;
 
-    // Check if any track from this album is currently playing
     const isPlayingThisAlbum = isPlaying && currentTrack && album.tracks.some(t => t.id === currentTrack.id);
 
     return (
         <div className="text-white p-8 pb-32 max-w-7xl mx-auto">
             {/* Header */}
             <div className="flex flex-col md:flex-row gap-8 mb-8 items-end bg-gradient-to-b from-[#2e2e2e] to-[#121212] p-8 rounded-lg">
-                <div className="w-52 h-52 bg-[#282828] shadow-2xl flex items-center justify-center flex-shrink-0">
+                <div className="relative w-52 h-52 bg-[#282828] shadow-2xl flex items-center justify-center flex-shrink-0 overflow-hidden rounded-md group">
                     {album.album_art_path ? (
                         <img src={`http://localhost:8000/${album.album_art_path}`} className="w-full h-full object-cover shadow-lg" />
                     ) : (
                         <FaMusic size={64} className="text-gray-500" />
+                    )}
+                    {isOwner && (
+                        <label className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center cursor-pointer transition-opacity">
+                            <div className="text-center">
+                                <FaCamera size={24} className="mx-auto mb-2" />
+                                <span className="text-sm font-bold">Change Image</span>
+                            </div>
+                            <input
+                                type="file"
+                                accept="image/*"
+                                className="hidden"
+                                onChange={handleThumbnailUpload}
+                            />
+                        </label>
                     )}
                 </div>
 
@@ -147,8 +189,10 @@ const AlbumDetails = ({ onPlay, currentTrack, isPlaying, onTogglePlay }) => {
                                 />
                             </div>
                             <div className="flex gap-2">
-                                <button onClick={handleSave} className="bg-green-500 text-black px-4 py-1 rounded font-bold text-sm">Save</button>
-                                <button onClick={() => setIsEditing(false)} className="border border-gray-500 text-white px-4 py-1 rounded font-bold text-sm">Cancel</button>
+                                <button type="button" onClick={handleSave} disabled={saving} className="bg-green-500 text-black px-4 py-1 rounded font-bold text-sm disabled:opacity-50">
+                                    {saving ? 'Saving...' : 'Save'}
+                                </button>
+                                <button type="button" onClick={() => setIsEditing(false)} className="border border-gray-500 text-white px-4 py-1 rounded font-bold text-sm">Cancel</button>
                             </div>
                         </div>
                     ) : (
@@ -158,7 +202,7 @@ const AlbumDetails = ({ onPlay, currentTrack, isPlaying, onTogglePlay }) => {
                     <div className="flex items-center gap-2 text-sm font-medium text-gray-300 mt-2">
                         {album.artist && <span className="text-white font-bold hover:underline cursor-pointer">{album.artist}</span>}
                         <span>•</span>
-                        <span>{new Date().getFullYear()}</span> {/* Year placeholder since we lack album year */}
+                        <span>{new Date().getFullYear()}</span>
                         <span>•</span>
                         <span>{album.track_count} songs,</span>
                         <span className="text-gray-400">

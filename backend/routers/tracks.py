@@ -189,9 +189,30 @@ def stream_track(
     
     if not os.path.exists(track.file_path):
         raise HTTPException(status_code=404, detail="File not found")
-        
-    from fastapi.responses import FileResponse
-    return FileResponse(track.file_path, media_type="audio/mpeg", filename=os.path.basename(track.file_path))
+    
+    from fastapi.responses import StreamingResponse
+    import mimetypes
+    
+    # Determine content type
+    content_type = mimetypes.guess_type(track.file_path)[0] or "audio/mpeg"
+    
+    def iter_file():
+        with open(track.file_path, "rb") as f:
+            while chunk := f.read(65536):  # 64KB chunks
+                yield chunk
+    
+    headers = {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, OPTIONS",
+        "Access-Control-Allow-Headers": "*",
+        "Content-Disposition": f'inline; filename="{os.path.basename(track.file_path)}"',
+    }
+    
+    return StreamingResponse(
+        iter_file(),
+        media_type=content_type,
+        headers=headers
+    )
 
 @router.put("/{track_id}/publish")
 def publish_track(
