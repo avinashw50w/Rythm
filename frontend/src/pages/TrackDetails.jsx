@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { useUI } from '../context/UIContext';
 import { FaPlay, FaPause, FaEdit, FaSave, FaTimes, FaMusic, FaGlobe, FaLock, FaCamera, FaTrash } from 'react-icons/fa';
 
-const TrackDetails = ({ onPlay, currentTrack, isPlaying, onTogglePlay }) => {
+const TrackDetails = ({ onPlay, currentTrack, isPlaying, onTogglePlay, onUpdateTrack }) => {
     const { trackId } = useParams();
     const navigate = useNavigate();
     const { user } = useAuth();
@@ -55,6 +55,10 @@ const TrackDetails = ({ onPlay, currentTrack, isPlaying, onTogglePlay }) => {
             setTrack(prev => ({ ...prev, ...res.data }));
             setIsEditing(false);
             showToast('Track updated successfully', 'success');
+            
+            if (onUpdateTrack) {
+                onUpdateTrack(res.data);
+            }
         } catch (error) {
             console.error('Error updating track:', error);
             showToast('Failed to update track', 'error');
@@ -75,6 +79,10 @@ const TrackDetails = ({ onPlay, currentTrack, isPlaying, onTogglePlay }) => {
                 headers: { 'Content-Type': 'multipart/form-data' }
             });
             setTrack(prev => ({ ...prev, album_art_path: res.data.album_art_path }));
+            
+            if (onUpdateTrack) {
+                onUpdateTrack({ ...track, album_art_path: res.data.album_art_path });
+            }
             showToast('Thumbnail uploaded', 'success');
         } catch (error) {
             console.error('Error uploading thumbnail:', error);
@@ -90,6 +98,9 @@ const TrackDetails = ({ onPlay, currentTrack, isPlaying, onTogglePlay }) => {
             try {
                 await client.put(`/tracks/${trackId}/publish?publish=${newStatus}`);
                 setTrack(prev => ({ ...prev, is_public: newStatus }));
+                if (onUpdateTrack) {
+                    onUpdateTrack({ ...track, is_public: newStatus });
+                }
                 showToast(`Track ${action}ed`, 'success');
             } catch (error) {
                 console.error('Error updating publish status:', error);

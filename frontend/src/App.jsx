@@ -59,6 +59,13 @@ function App() {
     setIsPlaying(prev => !prev);
   };
 
+  const handleUpdateTrack = (updatedTrack) => {
+    if (currentTrack && currentTrack.id === updatedTrack.id) {
+        setCurrentTrack(prev => ({ ...prev, ...updatedTrack }));
+    }
+    setQueue(prev => prev.map(t => t.id === updatedTrack.id ? { ...t, ...updatedTrack } : t));
+  };
+
   return (
     <AuthProvider>
       <Router>
@@ -116,6 +123,7 @@ function App() {
                 currentTrack={currentTrack}
                 isPlaying={isPlaying}
                 onTogglePlay={togglePlay}
+                onUpdateTrack={handleUpdateTrack}
               />
             } />
             <Route path="/album/:albumName" element={
