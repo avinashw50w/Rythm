@@ -16,13 +16,48 @@ const Player = ({ currentTrack, isPlaying, setIsPlaying, onTogglePlay, onNext, o
     const canvasRef = useRef(null);
     const miniCanvasRef = useRef(null);
     const animationRef = useRef(null);
+    const dataArrayRef = useRef(null);
 
+    // Initialize Audio Context (Lazy)
+    const initAudioContext = () => {
+        if (!audioContextRef.current && audioRef.current) {
+            try {
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                const ctx = new AudioContext();
+                audioContextRef.current = ctx;
+
+                const analyser = ctx.createAnalyser();
+                analyser.fftSize = 64;
+                analyser.smoothingTimeConstant = 0.8;
+                analyserRef.current = analyser;
+
+                // Create array for data once
+                dataArrayRef.current = new Uint8Array(analyser.frequencyBinCount);
+
+                // Create source from audio element
+                // Note: CORS issues can cause this to output silence if crossOrigin is not set correctly on the audio tag
+                const source = ctx.createMediaElementSource(audioRef.current);
+                sourceRef.current = source;
+
+                // Connect graph: Source -> Analyser -> Destination (Speakers)
+                source.connect(analyser);
+                analyser.connect(ctx.destination);
+            } catch (e) {
+                console.error("Failed to initialize audio context:", e);
+            }
+        }
+    };
+
+    // Handle Playback & Context Resume
     useEffect(() => {
         if (audioRef.current) {
             if (isPlaying) {
-                // Resume AudioContext if it exists and is suspended (browser autoplay policy)
+                // Initialize context on first play to respect browser autoplay policies
+                initAudioContext();
+
+                // Resume context if suspended
                 if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
-                    audioContextRef.current.resume();
+                    audioContextRef.current.resume().catch(e => console.error("Ctx resume failed", e));
                 }
                 
                 audioRef.current.play().catch(e => console.error("Playback failed:", e));
@@ -32,58 +67,47 @@ const Player = ({ currentTrack, isPlaying, setIsPlaying, onTogglePlay, onNext, o
         }
     }, [isPlaying, currentTrack]);
 
-    // Set up audio context and visualizer
-    useEffect(() => {
-        if (audioRef.current && !audioContextRef.current) {
-            try {
-                const AudioContext = window.AudioContext || window.webkitAudioContext;
-                audioContextRef.current = new AudioContext();
-                analyserRef.current = audioContextRef.current.createAnalyser();
-                analyserRef.current.fftSize = 64;
-                analyserRef.current.smoothingTimeConstant = 0.8;
-
-                sourceRef.current = audioContextRef.current.createMediaElementSource(audioRef.current);
-                sourceRef.current.connect(analyserRef.current);
-                analyserRef.current.connect(audioContextRef.current.destination);
-            } catch (e) {
-                console.error("Failed to create audio context:", e);
-            }
-        }
-
-        return () => {
-            if (animationRef.current) {
-                cancelAnimationFrame(animationRef.current);
-            }
-        };
-    }, []);
-
-    // Draw visualizer
+    // Visualizer Loop
     useEffect(() => {
         const drawVisualizer = () => {
-            if (!analyserRef.current) {
+            if (!analyserRef.current || !dataArrayRef.current) {
                 animationRef.current = requestAnimationFrame(drawVisualizer);
                 return;
             }
 
-            const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
-            analyserRef.current.getByteFrequencyData(dataArray);
+            const analyser = analyserRef.current;
+            const dataArray = dataArrayRef.current;
+            
+            // Get frequency data
+            analyser.getByteFrequencyData(dataArray);
 
             // Draw main canvas
             if (canvasRef.current) {
                 const canvas = canvasRef.current;
                 const ctx = canvas.getContext('2d');
+                const width = canvas.width;
+                const height = canvas.height;
                 const barCount = 16;
-                const barWidth = canvas.width / barCount - 1;
+                const barWidth = width / barCount - 2; // Spacing
 
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.clearRect(0, 0, width, height);
 
                 for (let i = 0; i < barCount; i++) {
-                    const barHeight = (dataArray[i] / 255) * canvas.height;
-                    const gradient = ctx.createLinearGradient(0, canvas.height, 0, canvas.height - barHeight);
-                    gradient.addColorStop(0, '#22c55e');
-                    gradient.addColorStop(1, '#4ade80');
+                    // Use a slightly different subset of the frequency data for better visuals
+                    const index = Math.floor(i * (dataArray.length / barCount));
+                    const value = dataArray[index];
+                    const barHeight = (value / 255) * height;
+
+                    const x = i * (barWidth + 2);
+                    const y = height - barHeight;
+
+                    // Gradient color
+                    const gradient = ctx.createLinearGradient(0, height, 0, 0);
+                    gradient.addColorStop(0, '#22c55e'); // Green 500
+                    gradient.addColorStop(1, '#4ade80'); // Green 400
+
                     ctx.fillStyle = gradient;
-                    ctx.fillRect(i * (barWidth + 1), canvas.height - barHeight, barWidth, barHeight);
+                    ctx.fillRect(x, y, barWidth, barHeight);
                 }
             }
 
@@ -91,22 +115,33 @@ const Player = ({ currentTrack, isPlaying, setIsPlaying, onTogglePlay, onNext, o
             if (miniCanvasRef.current && isPlaying) {
                 const canvas = miniCanvasRef.current;
                 const ctx = canvas.getContext('2d');
+                const width = canvas.width;
+                const height = canvas.height;
                 const barCount = 8;
-                const barWidth = canvas.width / barCount - 1;
+                const barWidth = width / barCount - 1;
 
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.clearRect(0, 0, width, height);
 
                 for (let i = 0; i < barCount; i++) {
-                    const barHeight = (dataArray[i] / 255) * canvas.height;
-                    ctx.fillStyle = '#22c55e';
-                    ctx.fillRect(i * (barWidth + 1), canvas.height - barHeight, barWidth, barHeight);
+                    const index = Math.floor(i * (dataArray.length / barCount));
+                    const value = dataArray[index];
+                    const barHeight = (value / 255) * height;
+
+                    ctx.fillStyle = 'rgba(34, 197, 94, 0.8)'; // Green with opacity
+                    ctx.fillRect(i * (barWidth + 1), height - barHeight, barWidth, barHeight);
                 }
             }
 
             animationRef.current = requestAnimationFrame(drawVisualizer);
         };
 
-        drawVisualizer();
+        if (isPlaying) {
+            drawVisualizer();
+        } else {
+            if (animationRef.current) {
+                cancelAnimationFrame(animationRef.current);
+            }
+        }
 
         return () => {
             if (animationRef.current) {
@@ -150,7 +185,7 @@ const Player = ({ currentTrack, isPlaying, setIsPlaying, onTogglePlay, onNext, o
     if (!currentTrack) return null;
 
     return (
-        <div className="fixed bottom-0 left-0 right-0 glass-player text-white p-4 h-24 flex items-center justify-between z-50 px-6">
+        <div className="fixed bottom-0 left-0 right-0 glass-player text-white p-4 h-24 flex items-center justify-between z-50 px-6 border-t border-[#333]">
             <audio
                 ref={audioRef}
                 src={`http://localhost:8000/tracks/${currentTrack.id}/stream`}
@@ -163,8 +198,8 @@ const Player = ({ currentTrack, isPlaying, setIsPlaying, onTogglePlay, onNext, o
             />
 
             {/* Track Info */}
-            <div className="flex items-center gap-4 w-1/3">
-                <div className="w-14 h-14 bg-[#282828] rounded-md shadow-lg overflow-hidden flex-shrink-0 relative">
+            <div className="flex items-center gap-4 w-1/3 min-w-0">
+                <div className="w-14 h-14 bg-[#282828] rounded-md shadow-lg overflow-hidden flex-shrink-0 relative group">
                     {currentTrack.album_art_path ? (
                         <img src={`http://localhost:8000/${currentTrack.album_art_path}`} alt="Album Art" className="w-full h-full object-cover" />
                     ) : (
@@ -172,17 +207,20 @@ const Player = ({ currentTrack, isPlaying, setIsPlaying, onTogglePlay, onNext, o
                             <span className="text-xs text-gray-400">No Art</span>
                         </div>
                     )}
-                    {/* Mini Visualizer on album art */}
+                    
+                    {/* Mini Visualizer Overlay */}
                     {isPlaying && (
-                        <canvas
-                            ref={miniCanvasRef}
-                            width={56}
-                            height={12}
-                            className="absolute bottom-0 left-0 right-0 bg-black/50"
-                        />
+                        <div className="absolute bottom-0 left-0 right-0 h-4 bg-black/40 backdrop-blur-[1px]">
+                            <canvas
+                                ref={miniCanvasRef}
+                                width={56}
+                                height={16}
+                                className="w-full h-full"
+                            />
+                        </div>
                     )}
                 </div>
-                <div className="overflow-hidden">
+                <div className="overflow-hidden min-w-0">
                     <Link to={`/track/${currentTrack.id}`} className="font-bold text-sm truncate hover:underline cursor-pointer block text-white">
                         {currentTrack.title}
                     </Link>
