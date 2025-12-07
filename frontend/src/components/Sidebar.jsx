@@ -9,15 +9,8 @@ const Sidebar = ({ hasPlayer }) => {
     const { user } = useAuth();
     const [playlists, setPlaylists] = useState([]);
 
-    useEffect(() => {
-        if (user) {
-            fetchPlaylists();
-        } else {
-            setPlaylists([]);
-        }
-    }, [user]);
-
     const fetchPlaylists = async () => {
+        if (!user) return;
         try {
             const res = await client.get('/playlists/');
             setPlaylists(res.data);
@@ -25,6 +18,25 @@ const Sidebar = ({ hasPlayer }) => {
             console.error('Error fetching playlists:', error);
         }
     };
+
+    useEffect(() => {
+        if (user) {
+            fetchPlaylists();
+        } else {
+            setPlaylists([]);
+        }
+
+        // Listen for updates
+        const handlePlaylistUpdate = () => {
+            fetchPlaylists();
+        };
+
+        window.addEventListener('playlist-updated', handlePlaylistUpdate);
+
+        return () => {
+            window.removeEventListener('playlist-updated', handlePlaylistUpdate);
+        };
+    }, [user]);
 
     const isActive = (path) => location.pathname === path;
 

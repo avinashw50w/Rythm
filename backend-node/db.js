@@ -1,55 +1,50 @@
-const initSqlJs = require('sql.js');
-const fs = require('fs');
+const Database = require('better-sqlite3');
 const path = require('path');
+const fs = require('fs');
 
-// Use the existing SQLite database from Python backend
+// Use the existing SQLite database file
 const dbPath = path.join(__dirname, '..', 'sql_app.db');
 
-let db = null;
+// Initialize database with file path
+const db = new Database(dbPath, { 
+    // verbose: console.log 
+});
 
-// Initialize database
-async function initDb() {
-  const SQL = await initSqlJs();
+// Enable foreign keys
+db.pragma('foreign_keys = ON');
 
-  // Load existing database if it exists
-  if (fs.existsSync(dbPath)) {
-    const fileBuffer = fs.readFileSync(dbPath);
-    db = new SQL.Database(fileBuffer);
-  } else {
-    db = new SQL.Database();
-  }
-
-  // Enable foreign keys
-  db.run('PRAGMA foreign_keys = ON');
-
-  // Create tables if they don't exist
-  db.run(`
+// Create tables if they don't exist
+db.exec(`
     CREATE TABLE IF NOT EXISTS users (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       email TEXT UNIQUE NOT NULL,
       name TEXT,
       avatar_url TEXT
-    )
-  `);
+    );
 
-  // Create albums table (renamed cover_art_path to album_art_path)
-  db.run(`
+    CREATE TABLE IF NOT EXISTS artists (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT UNIQUE NOT NULL,
+        bio TEXT,
+        image_path TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
     CREATE TABLE IF NOT EXISTS albums (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         title TEXT NOT NULL,
-        artist TEXT,
+        artist TEXT, -- Deprecated, kept for safety
+        artist_id INTEGER REFERENCES artists(id),
         album_art_path TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         uploader_id INTEGER REFERENCES users(id)
-    )
-  `);
+    );
 
-  // Create tracks table (removed album_art_path)
-  db.run(`
     CREATE TABLE IF NOT EXISTS tracks (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       title TEXT,
-      artist TEXT,
+      artist TEXT, -- Deprecated, kept for safety
+      artist_id INTEGER REFERENCES artists(id),
       album TEXT,
       genre TEXT,
       file_path TEXT NOT NULL,
@@ -60,185 +55,183 @@ async function initDb() {
       uploader_id INTEGER REFERENCES users(id),
       waveform_data TEXT,
       album_id INTEGER REFERENCES albums(id)
-    )
-  `);
+    );
 
-  // --- MIGRATIONS ---
-
-  // Migration 1: Add album_id to tracks if not exists
-  try {
-      db.exec('SELECT album_id FROM tracks LIMIT 1');
-  } catch (e) {
-      console.log('Migrating tracks table to include album_id...');
-      try {
-        db.run('ALTER TABLE tracks ADD COLUMN album_id INTEGER REFERENCES albums(id)');
-      } catch (alterError) { }
-      
-      // Create Unknown Album if not exists
-      let unknownId;
-      const unknownRes = db.exec("SELECT id FROM albums WHERE title = 'Unknown Album'");
-      if (unknownRes.length > 0 && unknownRes[0].values.length > 0) {
-          unknownId = unknownRes[0].values[0][0];
-      } else {
-          db.run("INSERT INTO albums (title, artist) VALUES ('Unknown Album', 'Unknown Artist')");
-          unknownId = db.exec("SELECT last_insert_rowid()")[0].values[0][0];
-      }
-
-      // Migrate existing tracks
-      const tracksStmt = db.prepare('SELECT id, album, uploader_id, artist FROM tracks');
-      const tracks = [];
-      while (tracksStmt.step()) {
-          tracks.push(tracksStmt.getAsObject());
-      }
-      tracksStmt.free();
-
-      const insertAlbumStmt = db.prepare("INSERT INTO albums (title, artist, uploader_id) VALUES (?, ?, ?)");
-      const updateTrackStmt = db.prepare("UPDATE tracks SET album_id = ?, album = ? WHERE id = ?");
-      const findAlbumStmt = db.prepare("SELECT id FROM albums WHERE title = ?");
-
-      db.exec('BEGIN TRANSACTION');
-      for (const track of tracks) {
-          let albId = unknownId;
-          let albName = track.album;
-
-          if (track.album) {
-              findAlbumStmt.reset();
-              findAlbumStmt.bind([track.album]);
-              if (findAlbumStmt.step()) {
-                  const row = findAlbumStmt.getAsObject();
-                  albId = row.id;
-              } else {
-                  insertAlbumStmt.run([track.album, track.artist || 'Unknown Artist', track.uploader_id]);
-                  const idRes = db.exec("SELECT last_insert_rowid()")[0].values[0][0];
-                  albId = idRes;
-              }
-          } else {
-              albName = 'Unknown Album';
-          }
-          updateTrackStmt.run([albId, albName, track.id]);
-      }
-      db.exec('COMMIT');
-      
-      insertAlbumStmt.free();
-      updateTrackStmt.free();
-      findAlbumStmt.free();
-      console.log('Migration complete: album_id added.');
-  }
-
-  // Migration 2: Rename cover_art_path to album_art_path in albums if needed
-  try {
-      db.exec('SELECT cover_art_path FROM albums LIMIT 1');
-      console.log('Migrating albums table: renaming cover_art_path to album_art_path...');
-      db.run('ALTER TABLE albums RENAME COLUMN cover_art_path TO album_art_path');
-  } catch (e) {
-      // Column likely already named album_art_path or table doesn't exist yet
-  }
-
-  // Migration 3: Remove album_art_path from tracks (migrate data first)
-  try {
-      db.exec('SELECT album_art_path FROM tracks LIMIT 1');
-      console.log('Migrating tracks: moving art to albums and removing column...');
-      
-      const tracksWithArt = [];
-      const stmt = db.prepare("SELECT album_id, album_art_path FROM tracks WHERE album_art_path IS NOT NULL AND album_id IS NOT NULL");
-      while(stmt.step()) {
-          tracksWithArt.push(stmt.getAsObject());
-      }
-      stmt.free();
-
-      const updateAlbumArt = db.prepare("UPDATE albums SET album_art_path = ? WHERE id = ? AND (album_art_path IS NULL OR album_art_path = '')");
-      db.exec('BEGIN TRANSACTION');
-      for(const t of tracksWithArt) {
-          updateAlbumArt.run([t.album_art_path, t.album_id]);
-      }
-      db.exec('COMMIT');
-      updateAlbumArt.free();
-
-      try {
-        db.run('ALTER TABLE tracks DROP COLUMN album_art_path');
-      } catch(dropErr) {
-          // SQLite version might be old, ignore
-      }
-  } catch (e) {
-      // Column already gone
-  }
-
-  db.run(`
     CREATE TABLE IF NOT EXISTS playlists (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT,
       creator_id INTEGER REFERENCES users(id),
       is_public INTEGER DEFAULT 0,
       thumbnail_path TEXT
-    )
-  `);
+    );
 
-  db.run(`
     CREATE TABLE IF NOT EXISTS playlist_tracks (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       playlist_id INTEGER REFERENCES playlists(id),
       track_id INTEGER REFERENCES tracks(id),
       "order" INTEGER DEFAULT 0
-    )
-  `);
+    );
 
-  db.run(`
     CREATE TABLE IF NOT EXISTS favorites (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id INTEGER REFERENCES users(id),
       track_id INTEGER REFERENCES tracks(id)
-    )
-  `);
+    );
+`);
 
-  // Save database periodically
-  setInterval(saveDb, 10000); // Every 10 seconds
+// --- MIGRATIONS ---
 
-  return db;
-}
+// Migration 1: Add album_id to tracks if not exists
+try {
+    const colInfo = db.prepare("PRAGMA table_info(tracks)").all();
+    const hasAlbumId = colInfo.some(c => c.name === 'album_id');
+    
+    if (!hasAlbumId) {
+        console.log('Migrating tracks table to include album_id...');
+        try { db.exec('ALTER TABLE tracks ADD COLUMN album_id INTEGER REFERENCES albums(id)'); } catch (e) { }
+        
+        // Create Unknown Album if not exists
+        let unknownId;
+        const unknownRes = db.prepare("SELECT id FROM albums WHERE title = 'Unknown Album'").get();
+        if (unknownRes) {
+            unknownId = unknownRes.id;
+        } else {
+            const info = db.prepare("INSERT INTO albums (title, artist) VALUES ('Unknown Album', 'Unknown Artist')").run();
+            unknownId = info.lastInsertRowid;
+        }
 
-// Save database to file
-function saveDb() {
-  if (db) {
-    const data = db.export();
-    const buffer = Buffer.from(data);
-    fs.writeFileSync(dbPath, buffer);
-  }
-}
+        // Migrate existing tracks
+        const tracks = db.prepare('SELECT id, album, uploader_id, artist FROM tracks').all();
 
-// Helper functions to match better-sqlite3 API
-function prepare(sql) {
-  return {
-    run: (...params) => {
-      db.run(sql, params);
-      return { lastInsertRowid: db.exec("SELECT last_insert_rowid()")[0]?.values[0]?.[0], changes: db.getRowsModified() };
-    },
-    get: (...params) => {
-      const stmt = db.prepare(sql);
-      stmt.bind(params);
-      if (stmt.step()) {
-        const row = stmt.getAsObject();
-        stmt.free();
-        return row;
-      }
-      stmt.free();
-      return undefined;
-    },
-    all: (...params) => {
-      const results = [];
-      const stmt = db.prepare(sql);
-      stmt.bind(params);
-      while (stmt.step()) {
-        results.push(stmt.getAsObject());
-      }
-      stmt.free();
-      return results;
+        const insertAlbumStmt = db.prepare("INSERT INTO albums (title, artist, uploader_id) VALUES (?, ?, ?)");
+        const updateTrackStmt = db.prepare("UPDATE tracks SET album_id = ?, album = ? WHERE id = ?");
+        const findAlbumStmt = db.prepare("SELECT id FROM albums WHERE title = ?");
+
+        const transaction = db.transaction((tracks) => {
+            for (const track of tracks) {
+                let albId = unknownId;
+                let albName = track.album;
+
+                if (track.album) {
+                    const row = findAlbumStmt.get(track.album);
+                    if (row) {
+                        albId = row.id;
+                    } else {
+                        const info = insertAlbumStmt.run(track.album, track.artist || 'Unknown Artist', track.uploader_id);
+                        albId = info.lastInsertRowid;
+                    }
+                } else {
+                    albName = 'Unknown Album';
+                }
+                updateTrackStmt.run(albId, albName, track.id);
+            }
+        });
+        
+        transaction(tracks);
+        console.log('Migration complete: album_id added.');
     }
-  };
+} catch (e) {
+    console.error("Migration 1 error:", e);
 }
 
-module.exports = {
-  initDb,
-  saveDb,
-  prepare,
-  getDb: () => db
-};
+// Migration 2: Rename cover_art_path to album_art_path in albums if needed
+try {
+    const colInfo = db.prepare("PRAGMA table_info(albums)").all();
+    const hasCoverArt = colInfo.some(c => c.name === 'cover_art_path');
+    if (hasCoverArt) {
+        console.log('Migrating albums table: renaming cover_art_path to album_art_path...');
+        try { db.exec('ALTER TABLE albums RENAME COLUMN cover_art_path TO album_art_path'); } catch(e){}
+    }
+} catch (e) {}
+
+// Migration 3: Remove album_art_path from tracks (migrate data first)
+try {
+    const colInfo = db.prepare("PRAGMA table_info(tracks)").all();
+    const hasAlbumArt = colInfo.some(c => c.name === 'album_art_path');
+    
+    if (hasAlbumArt) {
+        console.log('Migrating tracks: moving art to albums and removing column...');
+        
+        const tracksWithArt = db.prepare("SELECT album_id, album_art_path FROM tracks WHERE album_art_path IS NOT NULL AND album_id IS NOT NULL").all();
+
+        const updateAlbumArt = db.prepare("UPDATE albums SET album_art_path = ? WHERE id = ? AND (album_art_path IS NULL OR album_art_path = '')");
+        
+        const transaction = db.transaction((items) => {
+            for(const t of items) {
+                updateAlbumArt.run(t.album_art_path, t.album_id);
+            }
+        });
+        transaction(tracksWithArt);
+
+        try {
+          db.exec('ALTER TABLE tracks DROP COLUMN album_art_path');
+        } catch(dropErr) {
+            // SQLite version might be old or column constrained, ignore
+        }
+    }
+} catch (e) {}
+
+// Migration 4: Add artist_id to tracks and albums and migrate data
+try {
+    const colInfo = db.prepare("PRAGMA table_info(tracks)").all();
+    const hasArtistId = colInfo.some(c => c.name === 'artist_id');
+
+    if (!hasArtistId) {
+        console.log('Migrating tracks/albums to include artist_id...');
+        try { db.exec('ALTER TABLE tracks ADD COLUMN artist_id INTEGER REFERENCES artists(id)'); } catch (e) {}
+        try { db.exec('ALTER TABLE albums ADD COLUMN artist_id INTEGER REFERENCES artists(id)'); } catch (e) {}
+        
+        // 1. Create Unknown Artist
+        let unknownArtistId;
+        const uaRes = db.prepare("SELECT id FROM artists WHERE name = 'Unknown Artist'").get();
+        if (uaRes) {
+            unknownArtistId = uaRes.id;
+        } else {
+            const info = db.prepare("INSERT INTO artists (name) VALUES ('Unknown Artist')").run();
+            unknownArtistId = info.lastInsertRowid;
+        }
+
+        // 2. Extract unique artists from tracks and albums
+        const artistNames = new Set();
+        try {
+            const trackArtists = db.prepare("SELECT DISTINCT artist FROM tracks WHERE artist IS NOT NULL AND artist != ''").all();
+            trackArtists.forEach(r => artistNames.add(r.artist));
+        } catch(e) {}
+        
+        try {
+            const albumArtists = db.prepare("SELECT DISTINCT artist FROM albums WHERE artist IS NOT NULL AND artist != ''").all();
+            albumArtists.forEach(r => artistNames.add(r.artist));
+        } catch(e) {}
+
+        // 3. Insert artists
+        const insertArtistStmt = db.prepare("INSERT OR IGNORE INTO artists (name) VALUES (?)");
+        const transaction = db.transaction((names) => {
+            for(const name of names) {
+                insertArtistStmt.run(name);
+            }
+        });
+        transaction(Array.from(artistNames));
+
+        // 4. Update Tracks with artist_id
+        db.exec(`
+          UPDATE tracks 
+          SET artist_id = (SELECT id FROM artists WHERE name = tracks.artist)
+          WHERE artist IS NOT NULL AND artist != ''
+        `);
+        db.prepare("UPDATE tracks SET artist_id = ? WHERE artist_id IS NULL").run(unknownArtistId);
+
+        // 5. Update Albums with artist_id
+        db.exec(`
+          UPDATE albums 
+          SET artist_id = (SELECT id FROM artists WHERE name = albums.artist)
+          WHERE artist IS NOT NULL AND artist != ''
+        `);
+        db.prepare("UPDATE albums SET artist_id = ? WHERE artist_id IS NULL").run(unknownArtistId);
+
+        console.log('Migration complete: artist_id added.');
+    }
+} catch (e) {
+    console.error("Migration 4 error:", e);
+}
+
+module.exports = db;

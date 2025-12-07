@@ -79,11 +79,12 @@ router.get('/:id', optionalAuth, (req, res) => {
     }
 
     const tracks = db.prepare(`
-    SELECT t.*, u.name as uploader_name, a.album_art_path
+    SELECT t.*, u.name as uploader_name, a.album_art_path, ar.name as artist
     FROM playlist_tracks pt
     JOIN tracks t ON pt.track_id = t.id
     LEFT JOIN users u ON t.uploader_id = u.id
     LEFT JOIN albums a ON t.album_id = a.id
+    LEFT JOIN artists ar ON t.artist_id = ar.id
     WHERE pt.playlist_id = ?
     ORDER BY pt."order"
   `).all(req.params.id);

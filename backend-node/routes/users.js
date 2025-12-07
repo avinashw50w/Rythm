@@ -64,11 +64,12 @@ router.post('/favorites/:trackId', requireAuth, (req, res) => {
 // Get favorites (Moved up to avoid conflict with /:id)
 router.get('/favorites', requireAuth, (req, res) => {
     const favorites = db.prepare(`
-    SELECT t.*, u.name as uploader_name, a.album_art_path
+    SELECT t.*, u.name as uploader_name, a.album_art_path, ar.name as artist
     FROM favorites f
     JOIN tracks t ON f.track_id = t.id
     LEFT JOIN users u ON t.uploader_id = u.id
     LEFT JOIN albums a ON t.album_id = a.id
+    LEFT JOIN artists ar ON t.artist_id = ar.id
     WHERE f.user_id = ?
     ORDER BY f.id DESC
   `).all(req.user.id);
@@ -101,19 +102,21 @@ router.get('/:id/tracks', optionalAuth, (req, res) => {
     let tracks;
     if (req.user && req.user.id === userId) {
         tracks = db.prepare(`
-      SELECT t.*, u.name as uploader_name, a.album_art_path
+      SELECT t.*, u.name as uploader_name, a.album_art_path, ar.name as artist
       FROM tracks t 
       LEFT JOIN users u ON t.uploader_id = u.id
       LEFT JOIN albums a ON t.album_id = a.id
+      LEFT JOIN artists ar ON t.artist_id = ar.id
       WHERE t.uploader_id = ?
       ORDER BY t.id DESC
     `).all(userId);
     } else {
         tracks = db.prepare(`
-      SELECT t.*, u.name as uploader_name, a.album_art_path
+      SELECT t.*, u.name as uploader_name, a.album_art_path, ar.name as artist
       FROM tracks t 
       LEFT JOIN users u ON t.uploader_id = u.id
       LEFT JOIN albums a ON t.album_id = a.id
+      LEFT JOIN artists ar ON t.artist_id = ar.id
       WHERE t.uploader_id = ? AND t.is_public = 1
       ORDER BY t.id DESC
     `).all(userId);
@@ -143,11 +146,12 @@ router.get('/:id/albums', optionalAuth, (req, res) => {
         albums = db.prepare(`
             SELECT 
                 COALESCE(a.title, 'Unknown Album') as name, 
-                COALESCE(a.artist, 'Unknown Artist') as artist, 
+                COALESCE(ar.name, COALESCE(a.artist, 'Unknown Artist')) as artist, 
                 a.album_art_path as cover_art, 
                 COUNT(t.id) as track_count
             FROM tracks t
             LEFT JOIN albums a ON t.album_id = a.id
+            LEFT JOIN artists ar ON t.artist_id = ar.id
             WHERE t.uploader_id = ?
             GROUP BY COALESCE(a.id, 'unknown')
             ORDER BY name
@@ -156,11 +160,12 @@ router.get('/:id/albums', optionalAuth, (req, res) => {
         albums = db.prepare(`
             SELECT 
                 COALESCE(a.title, 'Unknown Album') as name, 
-                COALESCE(a.artist, 'Unknown Artist') as artist, 
+                COALESCE(ar.name, COALESCE(a.artist, 'Unknown Artist')) as artist, 
                 a.album_art_path as cover_art, 
                 COUNT(t.id) as track_count
             FROM tracks t
             LEFT JOIN albums a ON t.album_id = a.id
+            LEFT JOIN artists ar ON t.artist_id = ar.id
             WHERE t.uploader_id = ? AND t.is_public = 1
             GROUP BY COALESCE(a.id, 'unknown')
             ORDER BY name

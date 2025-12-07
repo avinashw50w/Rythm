@@ -15,6 +15,10 @@ const CreatePlaylist = () => {
         setLoading(true);
         try {
             const res = await client.post(`/playlists/?name=${encodeURIComponent(name)}&is_public=false`);
+            
+            // Dispatch event to refresh sidebar
+            window.dispatchEvent(new Event('playlist-updated'));
+            
             navigate(`/playlist/${res.data.id}`);
         } catch (error) {
             console.error('Error creating playlist:', error);

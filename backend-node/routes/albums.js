@@ -10,27 +10,33 @@ router.get('/:albumName', optionalAuth, (req, res) => {
     const albumName = decodeURIComponent(req.params.albumName);
 
     // Get album details directly first to be sure
-    const album = db.prepare('SELECT * FROM albums WHERE title = ?').get(albumName);
+    const album = db.prepare(`
+        SELECT a.*, ar.name as artist_name 
+        FROM albums a
+        LEFT JOIN artists ar ON a.artist_id = ar.id
+        WHERE a.title = ?
+    `).get(albumName);
 
     if (!album) {
         return res.status(404).json({ detail: 'Album not found' });
     }
 
     // Get all tracks with this album name (or album_id)
-    // We use album name match for legacy/robustness, or we could use album.id
     const tracks = db.prepare(`
-        SELECT t.*, a.album_art_path 
+        SELECT t.*, a.album_art_path, ar.name as artist 
         FROM tracks t
         LEFT JOIN albums a ON t.album_id = a.id
+        LEFT JOIN artists ar ON t.artist_id = ar.id
         WHERE t.album_id = ?
     `).all(album.id);
 
     if (!tracks || tracks.length === 0) {
         // Fallback to name search if album_id linking failed somehow
         const tracksByName = db.prepare(`
-            SELECT t.*, a.album_art_path 
+            SELECT t.*, a.album_art_path, ar.name as artist 
             FROM tracks t
             LEFT JOIN albums a ON t.album_id = a.id
+            LEFT JOIN artists ar ON t.artist_id = ar.id
             WHERE t.album = ?
         `).all(albumName);
         
@@ -60,7 +66,7 @@ router.get('/:albumName', optionalAuth, (req, res) => {
 
     res.json({
         name: album.title,
-        artist: album.artist,
+        artist: album.artist_name || album.artist,
         album_art_path: album.album_art_path,
         total_duration: visibleTracks.reduce((sum, t) => sum + (t.duration || 0), 0),
         track_count: visibleTracks.length,
@@ -98,10 +104,18 @@ router.put('/:albumName', requireAuth, (req, res) => {
         db.prepare('UPDATE tracks SET album = ? WHERE album_id = ?').run(new_name, album.id);
     }
     if (artist) {
-        db.prepare('UPDATE albums SET artist = ? WHERE id = ?').run(artist, album.id);
-        // Update tracks artist? Usually yes for compilation albums or single artist albums.
-        // But maybe not if it's "Various Artists". For now, let's update tracks.
-        db.prepare('UPDATE tracks SET artist = ? WHERE album_id = ?').run(artist, album.id);
+        let artistId;
+        const existingArtist = db.prepare('SELECT id FROM artists WHERE name = ?').get(artist);
+        if (existingArtist) {
+            artistId = existingArtist.id;
+        } else {
+            const res = db.prepare('INSERT INTO artists (name) VALUES (?)').run(artist);
+            artistId = res.lastInsertRowid;
+        }
+
+        db.prepare('UPDATE albums SET artist = ?, artist_id = ? WHERE id = ?').run(artist, artistId, album.id);
+        // Update tracks artist
+        db.prepare('UPDATE tracks SET artist = ?, artist_id = ? WHERE album_id = ?').run(artist, artistId, album.id);
     }
     if (genre) {
         db.prepare('UPDATE tracks SET genre = ? WHERE album_id = ?').run(genre, album.id);

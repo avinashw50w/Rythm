@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import client from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useUI } from '../context/UIContext';
@@ -249,13 +249,13 @@ const TrackDetails = ({ onPlay, currentTrack, isPlaying, onTogglePlay, onUpdateT
                             <div className="flex items-center gap-2 text-gray-300 font-medium text-sm md:text-base">
                                 {track.artist && (
                                     <>
-                                        <span className="text-white hover:underline cursor-pointer">{track.artist}</span>
+                                        <Link to={`/artist/${encodeURIComponent(track.artist)}`} className="text-white hover:underline cursor-pointer">{track.artist}</Link>
                                         <span>•</span>
                                     </>
                                 )}
                                 {track.album && (
                                     <>
-                                        <span className="hover:underline cursor-pointer">{track.album}</span>
+                                        <Link to={`/album/${encodeURIComponent(track.album)}`} className="hover:underline cursor-pointer">{track.album}</Link>
                                         <span>•</span>
                                     </>
                                 )}
@@ -333,7 +333,7 @@ const TrackDetails = ({ onPlay, currentTrack, isPlaying, onTogglePlay, onUpdateT
                     <h2 className="text-2xl font-bold mb-4">Credits</h2>
                     <div className="bg-[#181818] rounded-lg p-6 space-y-4">
                         <div>
-                            <h3 className="text-white font-bold">{track.artist || 'Unknown Artist'}</h3>
+                            <Link to={`/artist/${encodeURIComponent(track.artist)}`} className="text-white font-bold hover:underline block">{track.artist || 'Unknown Artist'}</Link>
                             <p className="text-sm text-gray-400">Main Artist</p>
                         </div>
                         <div>

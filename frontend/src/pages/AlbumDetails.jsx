@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import client from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useUI } from '../context/UIContext';
@@ -200,8 +200,12 @@ const AlbumDetails = ({ onPlay, currentTrack, isPlaying, onTogglePlay }) => {
                     )}
 
                     <div className="flex items-center gap-2 text-sm font-medium text-gray-300 mt-2">
-                        {album.artist && <span className="text-white font-bold hover:underline cursor-pointer">{album.artist}</span>}
-                        <span>•</span>
+                        {album.artist && (
+                            <>
+                                <Link to={`/artist/${encodeURIComponent(album.artist)}`} className="text-white font-bold hover:underline cursor-pointer">{album.artist}</Link>
+                                <span>•</span>
+                            </>
+                        )}
                         <span>{new Date().getFullYear()}</span>
                         <span>•</span>
                         <span>{album.track_count} songs,</span>

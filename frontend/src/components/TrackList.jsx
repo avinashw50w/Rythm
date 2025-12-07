@@ -146,7 +146,13 @@ const TrackList = ({ tracks, onPlay, currentTrack, isPlaying, onTogglePlay, hide
                                     <span className={`font-medium truncate hover:underline ${isCurrent ? 'text-green-500' : 'text-white'}`}>
                                         {track.title}
                                     </span>
-                                    <span className="text-sm text-[#b3b3b3] truncate group-hover:text-white transition-colors">{track.artist}</span>
+                                    <Link 
+                                        to={`/artist/${encodeURIComponent(track.artist)}`} 
+                                        onClick={e => e.stopPropagation()}
+                                        className="text-sm text-[#b3b3b3] truncate hover:text-white hover:underline transition-colors"
+                                    >
+                                        {track.artist}
+                                    </Link>
                                 </div>
                             </div>
 

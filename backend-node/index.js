@@ -3,7 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
-const { initDb, saveDb, getDb } = require('./db');
+const db = require('./db');
 
 const app = express();
 const PORT = process.env.PORT || 8000;
@@ -34,71 +34,55 @@ app.use('/uploads', express.static(uploadsDir, {
     }
 }));
 
-// Initialize database and start server
-async function startServer() {
-    try {
-        await initDb();
-        console.log('Database initialized');
+// Routes
+const authRoutes = require('./routes/auth');
+const tracksRoutes = require('./routes/tracks');
+const usersRoutes = require('./routes/users');
+const playlistsRoutes = require('./routes/playlists');
+const albumsRoutes = require('./routes/albums');
+const artistsRoutes = require('./routes/artists');
 
-        // Routes
-        const authRoutes = require('./routes/auth');
-        const tracksRoutes = require('./routes/tracks');
-        const usersRoutes = require('./routes/users');
-        const playlistsRoutes = require('./routes/playlists');
-        const albumsRoutes = require('./routes/albums');
+app.use('/auth', authRoutes);
+app.use('/tracks', tracksRoutes);
+app.use('/users', usersRoutes);
+app.use('/playlists', playlistsRoutes);
+app.use('/albums', albumsRoutes);
+app.use('/artists', artistsRoutes);
 
-        app.use('/auth', authRoutes);
-        app.use('/tracks', tracksRoutes);
-        app.use('/users', usersRoutes);
-        app.use('/playlists', playlistsRoutes);
-        app.use('/albums', albumsRoutes);
+// Root endpoint
+app.get('/', (req, res) => {
+    res.json({ message: 'Rythm API is running (Node.js + better-sqlite3)' });
+});
 
-        // Root endpoint
-        app.get('/', (req, res) => {
-            res.json({ message: 'Rythm API is running (Node.js)' });
-        });
+const server = app.listen(PORT, () => {
+    console.log(`Server running on http://localhost:${PORT}`);
+});
 
-        const server = app.listen(PORT, () => {
-            console.log(`Server running on http://localhost:${PORT}`);
-        });
+// Graceful shutdown logic
+const shutdown = (signal) => {
+    console.log(`\n${signal} received. Starting graceful shutdown...`);
 
-        // Graceful shutdown logic
-        const shutdown = (signal) => {
-            console.log(`\n${signal} received. Starting graceful shutdown...`);
+    server.close(() => {
+        console.log('HTTP server closed.');
+        try {
+            if (db) {
+                db.close();
+                console.log('Database connection closed.');
+            }
+            console.log('Graceful shutdown complete.');
+            process.exit(0);
+        } catch (err) {
+            console.error('Error during database close:', err);
+            process.exit(1);
+        }
+    });
 
-            server.close(() => {
-                console.log('HTTP server closed.');
-
-                try {
-                    console.log('Saving database...');
-                    saveDb();
-                    const db = getDb();
-                    if (db) {
-                        db.close();
-                        console.log('Database connection closed.');
-                    }
-                    console.log('Graceful shutdown complete.');
-                    process.exit(0);
-                } catch (err) {
-                    console.error('Error during database save/close:', err);
-                    process.exit(1);
-                }
-            });
-
-            // Force shutdown after 10 seconds
-            setTimeout(() => {
-                console.error('Could not close connections in time, forcefully shutting down');
-                process.exit(1);
-            }, 10000);
-        };
-
-        process.on('SIGTERM', () => shutdown('SIGTERM'));
-        process.on('SIGINT', () => shutdown('SIGINT'));
-
-    } catch (err) {
-        console.error('Failed to start server:', err);
+    // Force shutdown after 10 seconds
+    setTimeout(() => {
+        console.error('Could not close connections in time, forcefully shutting down');
         process.exit(1);
-    }
-}
+    }, 10000);
+};
 
-startServer();
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));

@@ -10,6 +10,7 @@ import Settings from './pages/Settings';
 import Profile from './pages/Profile';
 import TrackDetails from './pages/TrackDetails';
 import AlbumDetails from './pages/AlbumDetails';
+import ArtistDetails from './pages/ArtistDetails';
 import LikedSongs from './pages/LikedSongs';
 import PlaylistDetails from './pages/PlaylistDetails';
 
@@ -128,6 +129,14 @@ function App() {
             } />
             <Route path="/album/:albumName" element={
               <AlbumDetails
+                onPlay={handlePlayTrack}
+                currentTrack={currentTrack}
+                isPlaying={isPlaying}
+                onTogglePlay={togglePlay}
+              />
+            } />
+            <Route path="/artist/:artistName" element={
+              <ArtistDetails
                 onPlay={handlePlayTrack}
                 currentTrack={currentTrack}
                 isPlaying={isPlaying}
