@@ -33,9 +33,12 @@ export default class Wavis {
 
         // Handle potential CORS issues with media elements
         try {
-            this.source = this.audioCtx.createMediaElementSource(this.audioElement);
-            this.source.connect(this.analyser);
-            this.analyser.connect(this.audioCtx.destination);
+            // Check if source already exists to avoid error
+            if (!this.source) {
+                this.source = this.audioCtx.createMediaElementSource(this.audioElement);
+                this.source.connect(this.analyser);
+                this.analyser.connect(this.audioCtx.destination);
+            }
         } catch (e) {
             console.warn("Wavis: Media source already connected or CORS error", e);
         }
@@ -106,7 +109,10 @@ export default class Wavis {
 
         this.analyser.getByteFrequencyData(this.dataArray);
         
-        // Clear canvas
+        // Clear canvas with a slight fade for trail effect if needed, but clean clear looks sharper for neon
+        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+        
+        // Background
         this.ctx.fillStyle = '#000000';
         this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
@@ -122,129 +128,171 @@ export default class Wavis {
     getPresets() {
         return {
             bars: (ctx, canvas, data, len) => {
-                const barWidth = (canvas.width / len) * 2.5;
-                let barHeight;
+                // Inspired by Image 1: Mirrored bars with cyan/purple gradient
+                const cx = canvas.width / 2;
+                const cy = canvas.height / 2;
+                const barWidth = (canvas.width / len) * 8; 
                 let x = 0;
                 
-                // Gradient
-                const gradient = ctx.createLinearGradient(0, canvas.height, 0, 0);
-                gradient.addColorStop(0, '#bd34fe');
-                gradient.addColorStop(0.5, '#41d1ff');
-                gradient.addColorStop(1, '#ffffff');
+                // Neon Gradient
+                const gradient = ctx.createLinearGradient(0, cy + 200, 0, cy - 200);
+                gradient.addColorStop(0, '#bd34fe'); // Purple
+                gradient.addColorStop(0.5, '#41d1ff'); // Blue
+                gradient.addColorStop(1, '#ffffff'); // White tip
                 ctx.fillStyle = gradient;
+                
+                // Glow
+                ctx.shadowBlur = 15;
+                ctx.shadowColor = '#41d1ff';
 
-                for (let i = 0; i < len; i++) {
-                    barHeight = data[i] * (canvas.height / 255) * 0.8;
-                    // Mirror reflection effect
-                    ctx.fillRect(x, canvas.height - barHeight, barWidth, barHeight); 
-                    x += barWidth + 1;
-                    if(x > canvas.width) break;
+                // Skip some high frequencies
+                const usefulLen = Math.floor(len * 0.7);
+
+                for (let i = 0; i < usefulLen; i++) {
+                    const value = data[i];
+                    // Amplify height
+                    const barHeight = (value / 255) * (canvas.height * 0.6);
+                    
+                    // Mirrored Center
+                    if (barHeight > 0) {
+                        ctx.fillRect(cx + x, cy - barHeight / 2, barWidth, barHeight);
+                        ctx.fillRect(cx - x - barWidth, cy - barHeight / 2, barWidth, barHeight);
+                    }
+                    x += barWidth + 1; // Spacing
                 }
             },
             
             wave: (ctx, canvas, data, len) => {
+                // Inspired by Image 2 & 4: Smooth neon flowing wave
                 ctx.lineWidth = 3;
                 ctx.strokeStyle = '#1ed760';
-                ctx.beginPath();
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+                
+                // Neon Glow
+                ctx.shadowBlur = 20;
+                ctx.shadowColor = '#1ed760';
 
-                const sliceWidth = canvas.width * 1.0 / len;
+                ctx.beginPath();
+                
+                const sliceWidth = canvas.width / (len * 0.4);
                 let x = 0;
 
-                // Smooth curve
-                // We use a subset of data for cleaner wave in frequency domain, 
-                // but usually waves are TimeDomain. Let's fake a nice curve from Frequency data
-                // or assume we want the "landscape" look from the images.
-                
-                // Let's create a filled mountain-scape
-                ctx.moveTo(0, canvas.height);
-                for(let i = 0; i < len; i++) {
+                // Draw curve
+                for(let i = 0; i < len * 0.4; i++) {
                     const v = data[i] / 255.0;
-                    const y = canvas.height - (v * canvas.height * 0.8);
+                    const y = (canvas.height / 2) + Math.sin(i * 0.15) * (v * canvas.height * 0.4);
                     
-                    // Smooth quadratic curves would be better, but lineTo is faster
                     if (i === 0) ctx.moveTo(x, y);
-                    else ctx.lineTo(x, y);
+                    else {
+                        const prevX = x - sliceWidth;
+                        const prevY = (canvas.height / 2) + Math.sin((i - 1) * 0.15) * (data[i - 1] / 255.0 * canvas.height * 0.4);
+                        const cpX = (prevX + x) / 2;
+                        const cpY = (prevY + y) / 2;
+                        ctx.quadraticCurveTo(prevX, prevY, cpX, cpY);
+                    }
 
-                    x += sliceWidth * 2; // Stretch
-                    if (x > canvas.width) break;
+                    x += sliceWidth;
                 }
                 
+                ctx.stroke();
+                
+                // Fill gradient under wave
                 ctx.lineTo(canvas.width, canvas.height);
+                ctx.lineTo(0, canvas.height);
+                ctx.closePath();
                 const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
-                gradient.addColorStop(0, 'rgba(30, 215, 96, 0.8)');
-                gradient.addColorStop(1, 'rgba(30, 215, 96, 0)');
+                gradient.addColorStop(0, 'rgba(30, 215, 96, 0.0)');
+                gradient.addColorStop(1, 'rgba(30, 215, 96, 0.2)');
                 ctx.fillStyle = gradient;
                 ctx.fill();
-                ctx.stroke();
             },
 
             circle: (ctx, canvas, data, len) => {
+                // Inspired by Image 2 (Radial): Circular frequency spectrum
                 const cx = canvas.width / 2;
                 const cy = canvas.height / 2;
-                const radius = Math.min(cx, cy) * 0.4;
+                const radius = Math.min(cx, cy) * 0.3;
                 
                 ctx.translate(cx, cy);
                 
-                // Draw circular bars
                 const bars = 180;
                 const step = (Math.PI * 2) / bars;
                 
-                // Use bass frequencies primarily
-                const dataStep = Math.floor(len / bars);
-
                 for (let i = 0; i < bars; i++) {
-                    const value = data[i * dataStep];
-                    const barHeight = (value / 255) * (radius * 0.8);
+                    // Map bars to frequency data, focusing on lower/mid
+                    const dataIndex = Math.floor(i * (len / 2) / bars);
+                    const value = data[dataIndex];
+                    const barHeight = (value / 255) * 180;
                     
                     ctx.save();
                     ctx.rotate(i * step);
                     
-                    // Neon colors
+                    // Rainbow Neon Aesthetic
                     const hue = (i / bars) * 360;
-                    ctx.fillStyle = `hsl(${hue}, 100%, 50%)`;
-                    ctx.shadowBlur = 15;
+                    ctx.fillStyle = `hsl(${hue}, 100%, 60%)`;
+                    ctx.shadowBlur = 10;
                     ctx.shadowColor = `hsl(${hue}, 100%, 50%)`;
                     
-                    ctx.fillRect(0, radius, 4, barHeight); // Outer
-                    ctx.fillStyle = `hsla(${hue}, 100%, 50%, 0.3)`;
-                    ctx.fillRect(0, radius - (barHeight * 0.5), 4, barHeight * 0.5); // Inner reflection
+                    // Draw bar extending outwards
+                    // Use small rectangles for a "digital" look
+                    if (barHeight > 5) {
+                        ctx.fillRect(0, radius, 3, barHeight); 
+                    }
+                    
+                    // Inner reflection
+                    ctx.fillStyle = `hsla(${hue}, 100%, 70%, 0.2)`;
+                    if (barHeight > 5) {
+                        ctx.fillRect(0, radius - (barHeight * 0.2) - 5, 2, barHeight * 0.2);
+                    }
                     
                     ctx.restore();
                 }
             },
 
-            mirror: (ctx, canvas, data, len) => {
+            dots: (ctx, canvas, data, len) => {
+                // Inspired by Image 3: Particles/Dots Matrix
                 const cx = canvas.width / 2;
                 const cy = canvas.height / 2;
-                const barWidth = 6;
-                const bars = Math.floor(canvas.width / barWidth);
+                const maxRadius = Math.min(cx, cy) * 0.9;
                 
-                for (let i = 0; i < bars / 2; i++) {
-                    const value = data[i * 2]; // Skip some data
-                    const height = (value / 255) * (canvas.height * 0.6);
+                // Calculate average bass for center pulse
+                let bass = 0;
+                for(let i=0; i<10; i++) bass += data[i];
+                bass = bass / 10;
+                
+                // Pulsing Background
+                ctx.beginPath();
+                ctx.arc(cx, cy, maxRadius * 0.2 + (bass * 0.8), 0, Math.PI * 2);
+                ctx.fillStyle = `rgba(138, 43, 226, ${bass/1200})`; // Violet pulse
+                ctx.fill();
+
+                const particles = 120;
+                for (let i = 0; i < particles; i++) {
+                    const dataIndex = Math.floor(i * (len / 3) / particles); // use lower third of freq
+                    const value = data[dataIndex];
                     
-                    const r = value + 50;
-                    const g = 255 - value;
-                    const b = 200;
+                    const angle = (i / particles) * Math.PI * 2;
+                    // Distance fluctuates with volume
+                    const dist = (maxRadius * 0.3) + (value / 255) * (maxRadius * 0.5);
                     
-                    ctx.fillStyle = `rgb(${r},${g},${b})`;
+                    const x = cx + Math.cos(angle) * dist;
+                    const y = cy + Math.sin(angle) * dist;
                     
-                    // Right side
-                    ctx.fillRect(cx + (i * barWidth), cy - height / 2, barWidth - 1, height);
-                    // Left side
-                    ctx.fillRect(cx - ((i + 1) * barWidth), cy - height / 2, barWidth - 1, height);
+                    const size = (value / 255) * 6;
+                    
+                    ctx.beginPath();
+                    ctx.arc(x, y, size, 0, Math.PI * 2);
+                    // Blue-Pink gradient coloring
+                    ctx.fillStyle = `hsl(${(i/particles)*60 + 280}, 100%, 70%)`;
+                    ctx.shadowBlur = 8;
+                    ctx.shadowColor = `hsl(${(i/particles)*60 + 280}, 100%, 50%)`;
+                    ctx.fill();
                 }
-                
-                // Center glow
-                ctx.globalCompositeOperation = 'lighter';
-                const gradient = ctx.createRadialGradient(cx, cy, 10, cx, cy, canvas.width / 2);
-                gradient.addColorStop(0, 'rgba(255, 255, 255, 0.1)');
-                gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
-                ctx.fillStyle = gradient;
-                ctx.fillRect(0, 0, canvas.width, canvas.height);
             },
 
             shockwave: (ctx, canvas, data, len) => {
+                // Dramatic bass shockwaves
                 const cx = canvas.width / 2;
                 const cy = canvas.height / 2;
                 
@@ -252,31 +300,60 @@ export default class Wavis {
                 let bass = 0;
                 for(let i=0; i<10; i++) bass += data[i];
                 bass /= 10;
-                const scale = 1 + (bass / 255) * 0.5;
+                const normBass = bass / 255; // 0 to 1
+                const scale = 1 + normBass * 0.5;
 
                 ctx.translate(cx, cy);
-                ctx.scale(scale, scale);
                 
+                // Inner solid core
                 ctx.beginPath();
-                ctx.arc(0, 0, 100, 0, Math.PI * 2);
-                ctx.strokeStyle = `rgba(255, 65, 209, ${(bass/255)})`;
-                ctx.lineWidth = 10;
+                ctx.arc(0, 0, 60 * scale, 0, Math.PI * 2);
+                ctx.fillStyle = `rgba(255, 255, 255, ${normBass})`;
+                ctx.shadowBlur = 40 * normBass;
+                ctx.shadowColor = '#bd34fe'; // Purple glow
+                ctx.fill();
+
+                // Concentric Rings
+                ctx.lineWidth = 3;
+                ctx.shadowBlur = 20;
+                
+                // Ring 1
+                ctx.beginPath();
+                ctx.arc(0, 0, 100 * scale, 0, Math.PI * 2);
+                ctx.strokeStyle = '#41d1ff';
+                ctx.shadowColor = '#41d1ff';
                 ctx.stroke();
                 
+                // Ring 2 (Deformed)
                 ctx.beginPath();
-                ctx.arc(0, 0, 150 + (bass * 0.5), 0, Math.PI * 2);
-                ctx.strokeStyle = `rgba(65, 209, 255, ${(bass/255) * 0.5})`;
-                ctx.lineWidth = 5;
+                // Create a slightly jagged circle based on freq data
+                for (let i = 0; i < 360; i+=10) {
+                    const angle = (i * Math.PI) / 180;
+                    const val = data[i % 60]; 
+                    const r = (140 * scale) + (val * 0.2);
+                    const x = Math.cos(angle) * r;
+                    const y = Math.sin(angle) * r;
+                    if (i===0) ctx.moveTo(x,y);
+                    else ctx.lineTo(x,y);
+                }
+                ctx.closePath();
+                ctx.strokeStyle = `rgba(189, 52, 254, 0.8)`;
+                ctx.shadowColor = '#bd34fe';
                 ctx.stroke();
 
-                // Rays
-                const rays = 32;
+                // Beams/Rays
+                const rays = 16;
                 for(let i=0; i<rays; i++) {
                     ctx.save();
-                    ctx.rotate((Math.PI * 2 / rays) * i);
-                    const rayLen = data[i * 4] * 1.5;
+                    ctx.rotate((Math.PI * 2 / rays) * i + (Date.now() / 1000)); // Rotate slowly
+                    const rayLen = data[i * 4] * 2;
+                    
                     ctx.fillStyle = '#fff';
-                    ctx.fillRect(100, -2, rayLen, 4);
+                    // Draw beam
+                    if (rayLen > 50) {
+                        ctx.globalAlpha = rayLen / 512; // fade out
+                        ctx.fillRect(180, -1, rayLen * 0.8, 2);
+                    }
                     ctx.restore();
                 }
             }
