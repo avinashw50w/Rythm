@@ -18,6 +18,7 @@ const Player = ({ currentTrack, isPlaying, setIsPlaying, onTogglePlay, onNext, o
     const [availableVideos, setAvailableVideos] = useState([]);
     const [currentVideo, setCurrentVideo] = useState(null);
     const [showVideoMenu, setShowVideoMenu] = useState(false);
+    const [visualizerOptions, setVisualizerOptions] = useState(['none', 'album art']);
     
     const audioRef = useRef(null);
     const controlsTimeoutRef = useRef(null);
@@ -58,6 +59,8 @@ const Player = ({ currentTrack, isPlaying, setIsPlaying, onTogglePlay, onNext, o
     useEffect(() => {
         if (audioRef.current && !wavisRef.current) {
             wavisRef.current = new Wavis(audioRef.current);
+            const presets = wavisRef.current.getVisualizers();
+            setVisualizerOptions(['none', 'album art', ...presets]);
         }
     }, []);
 
@@ -194,8 +197,6 @@ const Player = ({ currentTrack, isPlaying, setIsPlaying, onTogglePlay, onNext, o
         const seconds = Math.floor(time % 60);
         return `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
     };
-
-    const visualizerOptions = ['none', 'album art', 'bars', 'wave', 'circle', 'dots', 'shockwave'];
 
     if (!currentTrack) return null;
 

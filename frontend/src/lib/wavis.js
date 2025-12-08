@@ -1,4 +1,3 @@
-
 export default class Wavis {
     constructor(audioElement) {
         this.audioElement = audioElement;
@@ -26,6 +25,10 @@ export default class Wavis {
         Object.keys(this.presets).forEach(key => {
             this.addVisualizer(key, this.presets[key]);
         });
+    }
+
+    getVisualizers() {
+        return Object.keys(this.visualizers);
     }
 
     init() {
