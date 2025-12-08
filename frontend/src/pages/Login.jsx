@@ -2,68 +2,75 @@ import React, { useState } from 'react';
 import client from '../api/client';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useUI } from '../context/UIContext';
 import { GoogleLogin } from '@react-oauth/google';
 
 const Login = () => {
     const [loading, setLoading] = useState(false);
     const navigate = useNavigate();
     const { login } = useAuth();
+    const { showToast } = useUI();
 
     const handleGoogleSuccess = async (credentialResponse) => {
         setLoading(true);
         try {
-            const res = await client.post('/auth/google', { token: credentialResponse.credential });
-            login(res.data.user, res.data.access_token, res.data.refresh_token);
+            const res = await client.post('/auth/google', {
+                token: credentialResponse.credential
+            });
+            
+            const { access_token, refresh_token, user } = res.data;
+            login(user, access_token, refresh_token);
+            
+            showToast(`Welcome back, ${user.name}!`, 'success');
             navigate('/');
         } catch (error) {
             console.error('Login failed:', error);
-            alert('Login failed');
+            showToast('Login failed. Please try again.', 'error');
         } finally {
             setLoading(false);
         }
     };
 
-    const handleGoogleError = () => {
-        console.error('Google Login Failed');
-        alert('Google Login Failed');
+    const handleGoogleFailure = () => {
+        showToast('Google Sign In was unsuccessful. Try again later.', 'error');
     };
 
     return (
-        <div className="min-h-screen bg-black flex flex-col items-center justify-center relative overflow-hidden">
-            {/* Background Gradient Blob */}
-            <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] bg-purple-600 rounded-full blur-[150px] opacity-20"></div>
-            <div className="absolute bottom-[-20%] right-[-10%] w-[50%] h-[50%] bg-blue-600 rounded-full blur-[150px] opacity-20"></div>
-
-            <div className="z-10 bg-[#121212] p-10 rounded-xl shadow-2xl w-full max-w-md border border-[#282828] text-center">
-                <div className="flex justify-center mb-8">
-                    <div className="w-16 h-16 bg-gradient-to-br from-purple-500 to-indigo-600 rounded-full flex items-center justify-center text-white text-3xl font-black shadow-lg">
-                        R
+        <div className="flex flex-col items-center justify-center min-h-screen bg-black text-white p-4">
+            <div className="w-full max-w-md bg-[#181818] p-8 rounded-xl shadow-2xl border border-[#282828] text-center">
+                <div className="mb-8">
+                    <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg">
+                        <span className="text-black font-black text-3xl">R</span>
                     </div>
+                    <h1 className="text-3xl font-bold mb-2 tracking-tight">Log in to Rythm</h1>
+                    <p className="text-gray-400">Manage your library and listen seamlessly.</p>
                 </div>
 
-                <h1 className="text-4xl font-black text-white mb-2 tracking-tighter">Rythm</h1>
-                <p className="text-gray-400 mb-8">Music for everyone.</p>
-
-                <div className="flex justify-center w-full">
-                    <GoogleLogin
-                        onSuccess={handleGoogleSuccess}
-                        onError={handleGoogleError}
-                        theme="filled_black"
-                        shape="pill"
-                        size="large"
-                        width="300"
-                    />
+                <div className="flex flex-col gap-4">
+                    {loading ? (
+                        <div className="flex justify-center py-4">
+                            <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-green-500"></div>
+                        </div>
+                    ) : (
+                        <div className="flex justify-center">
+                            <GoogleLogin
+                                onSuccess={handleGoogleSuccess}
+                                onError={handleGoogleFailure}
+                                theme="filled_black"
+                                shape="pill"
+                                size="large"
+                                width="300"
+                            />
+                        </div>
+                    )}
                 </div>
 
-                <div className="mt-8 pt-8 border-t border-[#282828]">
-                    <p className="text-xs text-gray-500 uppercase tracking-widest font-bold">No account needed</p>
-                    <p className="mt-4 text-gray-400 text-sm">Sign in with Google to create an account automatically.</p>
+                <div className="mt-8 pt-6 border-t border-[#282828]">
+                    <p className="text-xs text-gray-500">
+                        By continuing, you agree to our Terms of Service and Privacy Policy.
+                    </p>
                 </div>
             </div>
-
-            <footer className="absolute bottom-6 text-xs text-gray-600">
-                &copy; 2024 Rythm. All rights reserved.
-            </footer>
         </div>
     );
 };
