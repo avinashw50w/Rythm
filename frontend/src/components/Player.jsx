@@ -1,9 +1,10 @@
+
 import React, { useState, useRef, useEffect } from 'react';
-import { FaPlay, FaPause, FaStepForward, FaStepBackward, FaVolumeUp, FaVolumeMute, FaExpandAlt, FaCompressAlt, FaHeart, FaRegHeart } from 'react-icons/fa';
+import { FaPlay, FaPause, FaStepForward, FaStepBackward, FaVolumeUp, FaVolumeMute, FaExpandAlt, FaCompressAlt, FaHeart, FaRegHeart, FaMagic } from 'react-icons/fa';
 import { useNavigate, Link } from 'react-router-dom';
-import * as THREE from 'three';
 import client from '../api/client';
 import { useUI } from '../context/UIContext';
+import Wavis from '../lib/wavis';
 
 const Player = ({ currentTrack, isPlaying, setIsPlaying, onTogglePlay, onNext, onPrev, hasNext, hasPrev }) => {
     const [currentTime, setCurrentTime] = useState(0);
@@ -12,29 +13,13 @@ const Player = ({ currentTrack, isPlaying, setIsPlaying, onTogglePlay, onNext, o
     const [isFullScreen, setIsFullScreen] = useState(false);
     const [showControls, setShowControls] = useState(true);
     const [isFavorite, setIsFavorite] = useState(false);
+    const [visualizerName, setVisualizerName] = useState('bars');
     
     const audioRef = useRef(null);
     const controlsTimeoutRef = useRef(null);
+    const canvasRef = useRef(null);
+    const wavisRef = useRef(null);
     const { showToast } = useUI();
-
-    // Audio API refs
-    const audioContextRef = useRef(null);
-    const analyserRef = useRef(null);
-    const sourceRef = useRef(null);
-    const dataArrayRef = useRef(null);
-
-    // Canvas refs
-    const fullScreenMountRef = useRef(null); // Div to mount Three.js
-
-    // Three.js refs
-    const sceneRef = useRef(null);
-    const cameraRef = useRef(null);
-    const rendererRef = useRef(null);
-    const animationFrameRef = useRef(null);
-    const barsMeshRef = useRef(null);
-    const albumArtMeshRef = useRef(null);
-    const starsRef = useRef(null);
-    const groupRef = useRef(null);
 
     useEffect(() => {
         if (currentTrack) {
@@ -53,73 +38,54 @@ const Player = ({ currentTrack, isPlaying, setIsPlaying, onTogglePlay, onNext, o
         }
     };
 
-    // Initialize Audio Context (Lazy)
-    const initAudioContext = () => {
-        if (!audioContextRef.current && audioRef.current) {
-            try {
-                const AudioContext = window.AudioContext || window.webkitAudioContext;
-                const ctx = new AudioContext();
-                audioContextRef.current = ctx;
-
-                const analyser = ctx.createAnalyser();
-                analyser.fftSize = 2048; // High resolution for better visualizer
-                analyser.smoothingTimeConstant = 0.85;
-                analyserRef.current = analyser;
-
-                dataArrayRef.current = new Uint8Array(analyser.frequencyBinCount);
-
-                const source = ctx.createMediaElementSource(audioRef.current);
-                sourceRef.current = source;
-
-                source.connect(analyser);
-                analyser.connect(ctx.destination);
-            } catch (e) {
-                console.error("Failed to initialize audio context:", e);
-            }
-        }
-    };
-
-    // Handle Playback & Context Resume
+    // Initialize Wavis
     useEffect(() => {
-        if (audioRef.current) {
-            if (isPlaying) {
-                initAudioContext();
-                if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
-                    audioContextRef.current.resume().catch(e => console.error("Ctx resume failed", e));
-                }
-                audioRef.current.play().catch(e => console.error("Playback failed:", e));
-            } else {
-                audioRef.current.pause();
-            }
+        if (audioRef.current && !wavisRef.current) {
+            wavisRef.current = new Wavis(audioRef.current);
         }
-    }, [isPlaying, currentTrack]);
+    }, []);
 
-    // Handle full-screen mouse movement to show/hide controls
+    // Handle Fullscreen Visualizer
     useEffect(() => {
-        if (!isFullScreen) {
-            setShowControls(true);
-            if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
-            return;
+        if (isFullScreen && wavisRef.current && canvasRef.current) {
+            wavisRef.current.mount(canvasRef.current);
+            wavisRef.current.start();
+            setVisualizerName(wavisRef.current.currentVisualizer);
         }
-
-        const resetControlsTimeout = () => {
-            setShowControls(true);
-            if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
-            controlsTimeoutRef.current = setTimeout(() => {
-                setShowControls(false);
-            }, 3000);
-        };
-
-        // Initial set
-        resetControlsTimeout();
 
         return () => {
-            if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
+            if (wavisRef.current) {
+                wavisRef.current.unmount();
+            }
         };
     }, [isFullScreen]);
 
-    const handleFullScreenMouseMove = () => {
-        if (!isFullScreen) return;
+    // Handle Playback State for Visualizer
+    useEffect(() => {
+        if (audioRef.current) {
+            if (isPlaying) {
+                audioRef.current.play().catch(e => console.error("Playback failed:", e));
+                if (isFullScreen && wavisRef.current) wavisRef.current.start();
+            } else {
+                audioRef.current.pause();
+                // We don't stop wavis here completely to keep the last frame or black screen if desired, 
+                // but stopping saves resources.
+                // wavisRef.current.stop(); 
+            }
+        }
+    }, [isPlaying, currentTrack, isFullScreen]);
+
+    // Auto-hide controls
+    useEffect(() => {
+        if (!isFullScreen) {
+            setShowControls(true);
+            return;
+        }
+        resetControlsTimeout();
+        return () => clearTimeout(controlsTimeoutRef.current);
+    }, [isFullScreen]);
+
+    const resetControlsTimeout = () => {
         setShowControls(true);
         if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
         controlsTimeoutRef.current = setTimeout(() => {
@@ -127,332 +93,19 @@ const Player = ({ currentTrack, isPlaying, setIsPlaying, onTogglePlay, onNext, o
         }, 3000);
     };
 
-    // --- Three.js Visualizer Lifecycle: INIT ---
-    useEffect(() => {
-        if (!isFullScreen || !fullScreenMountRef.current) return;
+    const handleFullScreenMouseMove = () => {
+        if (!isFullScreen) return;
+        resetControlsTimeout();
+    };
 
-        // Initialize Scene
-        const scene = new THREE.Scene();
-        scene.fog = new THREE.FogExp2(0x000000, 0.03); // More fog for depth
-        sceneRef.current = scene;
-
-        // Camera
-        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-        camera.position.z = 24;
-        camera.position.y = 2;
-        camera.lookAt(0, 0, 0);
-        cameraRef.current = camera;
-
-        // Renderer
-        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-        renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.setPixelRatio(window.devicePixelRatio);
-        fullScreenMountRef.current.appendChild(renderer.domElement);
-        rendererRef.current = renderer;
-
-        // Group to hold the circle and bars for global rotation/scaling
-        const mainGroup = new THREE.Group();
-        scene.add(mainGroup);
-        groupRef.current = mainGroup;
-
-        // Lights
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.2);
-        scene.add(ambientLight);
-        
-        // Dynamic lights
-        const spotLight = new THREE.SpotLight(0xbd34fe, 100);
-        spotLight.position.set(0, 20, 10);
-        spotLight.angle = Math.PI / 4;
-        spotLight.penumbra = 0.5;
-        scene.add(spotLight);
-
-        const pointLight = new THREE.PointLight(0x41d1ff, 5, 50);
-        pointLight.position.set(0, -10, 10);
-        scene.add(pointLight);
-
-        // --- Create Objects ---
-
-        // 1. Circular Spectrum Bars (InstancedMesh)
-        const barsCount = 120; // More bars for a smoother look
-        const barWidth = 0.4;
-        const radius = 10;
-        
-        const geometry = new THREE.BoxGeometry(barWidth, 1, barWidth);
-        geometry.translate(0, 0.5, 0); // Pivot at bottom
-        
-        const material = new THREE.MeshPhysicalMaterial({
-            color: 0xffffff,
-            roughness: 0.2,
-            metalness: 0.9,
-            emissive: 0x000000,
-            emissiveIntensity: 0.5
-        });
-        
-        const barsMesh = new THREE.InstancedMesh(geometry, material, barsCount);
-        const dummy = new THREE.Object3D();
-        const angleStep = (Math.PI * 2) / barsCount;
-
-        for (let i = 0; i < barsCount; i++) {
-            const angle = i * angleStep;
-            dummy.position.set(Math.cos(angle) * radius, Math.sin(angle) * radius, 0);
-            dummy.rotation.z = angle - Math.PI / 2; // Rotate outward from center
-            dummy.updateMatrix();
-            barsMesh.setMatrixAt(i, dummy.matrix);
-            
-            // Initial gradient color (Cyan to Purple)
-            const color = new THREE.Color();
-            color.setHSL(i / barsCount, 1, 0.5);
-            barsMesh.setColorAt(i, color);
+    const toggleVisualizerMode = (e) => {
+        e.stopPropagation();
+        if (wavisRef.current) {
+            const next = wavisRef.current.nextVisualizer();
+            setVisualizerName(next);
+            showToast(`Visualizer: ${next.charAt(0).toUpperCase() + next.slice(1)}`, 'info');
         }
-        barsMesh.instanceMatrix.needsUpdate = true;
-        barsMesh.instanceColor.needsUpdate = true;
-        mainGroup.add(barsMesh); // Add to group
-        barsMeshRef.current = barsMesh;
-
-        // 2. Center Album Art Disc (Geometry only, texture set in separate effect)
-        const discRadius = radius - 1.5;
-        const artGeometry = new THREE.CylinderGeometry(discRadius, discRadius, 0.2, 64);
-        artGeometry.rotateX(Math.PI / 2); // Face Z axis
-        
-        const artMaterial = new THREE.MeshStandardMaterial({ 
-            color: 0x111111, // Default dark grey
-            roughness: 0.4,
-            metalness: 0.2
-        });
-        
-        const artMesh = new THREE.Mesh(artGeometry, [
-            new THREE.MeshBasicMaterial({ color: 0x000000 }), // Side
-            artMaterial, // Top (Index 1) - This is where the texture goes
-            new THREE.MeshBasicMaterial({ color: 0x000000 })  // Bottom
-        ]);
-        mainGroup.add(artMesh);
-        albumArtMeshRef.current = artMesh;
-
-        // 3. Glowing Ring (behind bars)
-        const ringGeo = new THREE.TorusGeometry(radius, 0.05, 16, 100);
-        const ringMat = new THREE.MeshBasicMaterial({ color: 0x41d1ff });
-        const ring = new THREE.Mesh(ringGeo, ringMat);
-        mainGroup.add(ring);
-
-        // 4. Starfield / Particles
-        const starsGeometry = new THREE.BufferGeometry();
-        const starsCount = 2000;
-        const posArray = new Float32Array(starsCount * 3);
-        const sizesArray = new Float32Array(starsCount);
-        
-        for(let i = 0; i < starsCount * 3; i++) {
-            posArray[i] = (Math.random() - 0.5) * 150; // Wide spread
-        }
-        for(let i = 0; i < starsCount; i++) {
-            sizesArray[i] = Math.random();
-        }
-
-        starsGeometry.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
-        starsGeometry.setAttribute('size', new THREE.BufferAttribute(sizesArray, 1));
-        
-        // Simple circle shader for particles
-        const sprite = new THREE.TextureLoader().load('https://threejs.org/examples/textures/sprites/disc.png');
-        const starsMaterial = new THREE.PointsMaterial({
-            size: 0.5,
-            map: sprite,
-            transparent: true,
-            alphaTest: 0.5,
-            vertexColors: false,
-            color: 0xffffff,
-            opacity: 0.6
-        });
-        
-        const stars = new THREE.Points(starsGeometry, starsMaterial);
-        scene.add(stars);
-        starsRef.current = stars;
-
-        // --- Animation Loop ---
-        const dummyUpdate = new THREE.Object3D();
-        const colorUpdate = new THREE.Color();
-        const purple = new THREE.Color(0xbd34fe);
-        const cyan = new THREE.Color(0x41d1ff);
-
-        const animate = () => {
-            animationFrameRef.current = requestAnimationFrame(animate);
-
-            let bassImpulse = 1;
-
-            if (analyserRef.current && dataArrayRef.current) {
-                analyserRef.current.getByteFrequencyData(dataArrayRef.current);
-                const data = dataArrayRef.current;
-                
-                // Audio Data Processing
-                // We want to skip the very first few bins (DC offset/rumble) and spread the rest
-                const lowerBound = 4; 
-                const range = 150; // Focus on 0-~3000Hz where most energy is
-                const step = Math.floor(range / barsCount);
-
-                let sumBass = 0;
-
-                for (let i = 0; i < barsCount; i++) {
-                    const dataIndex = lowerBound + (i * step);
-                    // Average a few bins for smoothness
-                    const val = (data[dataIndex] + data[dataIndex+1]) / 2; 
-                    
-                    // Normalize (0-1)
-                    const normVal = val / 255;
-
-                    // Calculate Bass for global pulse (first 10% of bars)
-                    if (i < barsCount / 8) {
-                        sumBass += normVal;
-                    }
-
-                    // Visual Scale
-                    // Non-linear scaling looks better (square the normalized value)
-                    const scaleVal = 0.2 + (normVal * normVal * normVal * 15); 
-
-                    // Update Position/Scale
-                    const angle = i * angleStep;
-                    dummyUpdate.position.set(Math.cos(angle) * radius, Math.sin(angle) * radius, 0);
-                    dummyUpdate.rotation.z = angle - Math.PI / 2;
-                    dummyUpdate.scale.set(1, scaleVal, 1);
-                    dummyUpdate.updateMatrix();
-                    barsMesh.setMatrixAt(i, dummyUpdate.matrix);
-
-                    // Dynamic Color
-                    // Interpolate between purple (low) and cyan/white (high) based on volume of that bar
-                    colorUpdate.copy(purple).lerp(cyan, i / barsCount).lerp(new THREE.Color(0xffffff), normVal * 0.8);
-                    barsMesh.setColorAt(i, colorUpdate);
-                }
-                
-                barsMesh.instanceMatrix.needsUpdate = true;
-                barsMesh.instanceColor.needsUpdate = true;
-
-                // Global Pulse
-                const bassAvg = sumBass / (barsCount / 8);
-                bassImpulse = 1 + (bassAvg * 0.15); // Subtle pulse
-            }
-
-            // Apply Pulse to Center Group
-            if (groupRef.current) {
-                // Smooth lerp for pulse to avoid jitter
-                const currentScale = groupRef.current.scale.x;
-                const targetScale = bassImpulse;
-                const smoothScale = currentScale + (targetScale - currentScale) * 0.2;
-                
-                groupRef.current.scale.set(smoothScale, smoothScale, smoothScale);
-                groupRef.current.rotation.z += 0.001; // Slow constant rotation
-            }
-
-            // Particles Drift
-            if (starsRef.current) {
-                starsRef.current.rotation.y += 0.0003;
-                starsRef.current.rotation.x -= 0.0001;
-            }
-
-            // Camera movement
-            const time = Date.now() * 0.0002;
-            camera.position.x = Math.sin(time) * 2;
-            camera.position.y = Math.cos(time * 0.5) * 2;
-            camera.lookAt(0, 0, 0);
-
-            renderer.render(scene, camera);
-        };
-
-        animate();
-
-        const handleResize = () => {
-            if (cameraRef.current && rendererRef.current) {
-                cameraRef.current.aspect = window.innerWidth / window.innerHeight;
-                cameraRef.current.updateProjectionMatrix();
-                rendererRef.current.setSize(window.innerWidth, window.innerHeight);
-            }
-        };
-        window.addEventListener('resize', handleResize);
-
-        // Cleanup
-        return () => {
-            window.removeEventListener('resize', handleResize);
-            if (animationFrameRef.current) {
-                cancelAnimationFrame(animationFrameRef.current);
-            }
-            if (rendererRef.current) {
-                rendererRef.current.dispose();
-                if (fullScreenMountRef.current && rendererRef.current.domElement) {
-                    try {
-                        fullScreenMountRef.current.removeChild(rendererRef.current.domElement);
-                    } catch (e) {
-                        console.warn("Could not remove canvas", e);
-                    }
-                }
-                rendererRef.current = null;
-            }
-            
-            // Dispose Geometries/Materials
-            geometry.dispose();
-            material.dispose();
-            artGeometry.dispose();
-            artMaterial.dispose();
-            starsGeometry.dispose();
-            starsMaterial.dispose();
-            ringGeo.dispose();
-            ringMat.dispose();
-        };
-
-    }, [isFullScreen]); 
-
-    // --- Three.js Visualizer Lifecycle: TRACK UPDATE ---
-    useEffect(() => {
-        if (!isFullScreen || !albumArtMeshRef.current || !currentTrack) return;
-
-        // Dispose old texture to free memory
-        const material = albumArtMeshRef.current.material[1]; // Top face
-        if (material.map) {
-            material.map.dispose();
-        }
-
-        const updateTexture = (texture) => {
-            if (!albumArtMeshRef.current) return;
-            texture.colorSpace = THREE.SRGBColorSpace;
-            albumArtMeshRef.current.material[1].map = texture;
-            albumArtMeshRef.current.material[1].needsUpdate = true;
-        };
-
-        if (currentTrack.album_art_path) {
-            const loader = new THREE.TextureLoader();
-            loader.load(
-                `http://localhost:8000/${currentTrack.album_art_path}`,
-                updateTexture,
-                undefined,
-                (err) => console.error("Error loading texture:", err)
-            );
-        } else {
-            // Generate fallback texture
-            const canvas = document.createElement('canvas');
-            canvas.width = 512;
-            canvas.height = 512;
-            const ctx = canvas.getContext('2d');
-            
-            // Gradient Background
-            const grad = ctx.createRadialGradient(256, 256, 50, 256, 256, 256);
-            grad.addColorStop(0, '#333');
-            grad.addColorStop(1, '#000');
-            ctx.fillStyle = grad;
-            ctx.fillRect(0, 0, 512, 512);
-            
-            // Text/Icon
-            ctx.fillStyle = '#41D1FF';
-            ctx.font = 'bold 200px Arial';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillText('♪', 256, 256);
-            
-            // Song Title (Small)
-            ctx.fillStyle = '#ffffff';
-            ctx.font = 'bold 40px Arial';
-            ctx.fillText(currentTrack.title.substring(0, 15), 256, 400);
-
-            const texture = new THREE.CanvasTexture(canvas);
-            updateTexture(texture);
-        }
-
-    }, [currentTrack, isFullScreen]);
-
+    };
 
     const handleTimeUpdate = () => {
         if(audioRef.current) {
@@ -502,27 +155,36 @@ const Player = ({ currentTrack, isPlaying, setIsPlaying, onTogglePlay, onNext, o
                 onMouseMove={handleFullScreenMouseMove}
                 onClick={handleFullScreenMouseMove}
             >
-                {/* Three.js Mount Point */}
-                <div ref={fullScreenMountRef} className="absolute inset-0 w-full h-full" />
+                <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" />
                 
-                {/* Top Controls */}
-                <div className={`absolute top-8 right-8 z-20 transition-opacity duration-500 ${showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+                {/* Visualizer Controls (Top Right) */}
+                <div className={`absolute top-8 right-8 z-20 flex gap-4 transition-opacity duration-500 ${showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+                    <button
+                        onClick={toggleVisualizerMode}
+                        className="bg-black/40 hover:bg-white/20 p-3 rounded-full text-white backdrop-blur-md border border-white/20 hover:scale-110 transition-all group"
+                        title="Switch Visualizer"
+                    >
+                        <FaMagic size={20} className={visualizerName === 'shockwave' ? 'text-purple-400' : 'text-white'} />
+                        <span className="absolute right-full mr-3 top-1/2 -translate-y-1/2 bg-black/80 px-2 py-1 rounded text-xs opacity-0 group-hover:opacity-100 whitespace-nowrap pointer-events-none">
+                            Change Style
+                        </span>
+                    </button>
                     <button 
                         onClick={(e) => { e.stopPropagation(); setIsFullScreen(false); }}
-                        className="bg-white/10 hover:bg-white/20 p-3 rounded-full text-white backdrop-blur-md transition-all border border-white/20 hover:rotate-90 duration-300"
+                        className="bg-black/40 hover:bg-white/20 p-3 rounded-full text-white backdrop-blur-md border border-white/20 hover:scale-110 transition-all"
                     >
-                        <FaCompressAlt size={24} />
+                        <FaCompressAlt size={20} />
                     </button>
                 </div>
 
                 {/* Center Overlay Content - Minimalist */}
                 <div className={`absolute inset-x-0 bottom-0 pb-16 z-10 flex flex-col items-center justify-end transition-opacity duration-500 ${showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
                     <div className="text-center max-w-2xl px-8" onClick={(e) => e.stopPropagation()}>
-                        <h1 className="text-4xl md:text-6xl font-black text-white mb-4 tracking-tight drop-shadow-[0_0_15px_rgba(255,255,255,0.5)] animate-pulse-slow">{currentTrack.title}</h1>
+                        <h1 className="text-4xl md:text-6xl font-black text-white mb-4 tracking-tight drop-shadow-[0_0_15px_rgba(255,255,255,0.5)]">{currentTrack.title}</h1>
                         <h2 className="text-xl md:text-3xl text-cyan-300 font-medium mb-10 drop-shadow-[0_0_10px_rgba(65,209,255,0.5)]">{currentTrack.artist}</h2>
 
                         {/* Controls */}
-                        <div className="flex items-center justify-center gap-12 backdrop-blur-md bg-black/20 p-6 rounded-full border border-white/10 shadow-2xl">
+                        <div className="flex items-center justify-center gap-12 backdrop-blur-md bg-black/30 p-6 rounded-full border border-white/10 shadow-2xl">
                              <button onClick={onPrev} disabled={!hasPrev} className={`text-white/70 hover:text-white transition-transform hover:scale-110 active:scale-95 ${!hasPrev && 'opacity-30'}`}>
                                 <FaStepBackward size={32} />
                             </button>
