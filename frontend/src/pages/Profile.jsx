@@ -88,7 +88,12 @@ const Profile = ({ onPlay, currentTrack, isPlaying, onTogglePlay }) => {
             <div className="flex items-end gap-6 mb-8 p-6 bg-gradient-to-b from-[#535353] to-[#121212]">
                 <div className="relative shadow-2xl rounded-full overflow-hidden w-52 h-52 flex items-center justify-center bg-[#282828]">
                     {user.avatar_url ? (
-                        <img src={user.avatar_url} alt={user.name} className="w-full h-full object-cover" />
+                        <img 
+                            src={user.avatar_url} 
+                            alt={user.name} 
+                            className="w-full h-full object-cover" 
+                            referrerPolicy="no-referrer"
+                        />
                     ) : (
                         <FaUserCircle size={120} className="text-gray-400" />
                     )}

@@ -8,9 +8,11 @@ const Player = ({ currentTrack, isPlaying, setIsPlaying, onTogglePlay, onNext, o
     const [duration, setDuration] = useState(0);
     const [volume, setVolume] = useState(1);
     const [isFullScreen, setIsFullScreen] = useState(false);
+    const [showControls, setShowControls] = useState(true);
     
     const audioRef = useRef(null);
     const navigate = useNavigate();
+    const controlsTimeoutRef = useRef(null);
 
     // Audio API refs
     const audioContextRef = useRef(null);
@@ -73,6 +75,39 @@ const Player = ({ currentTrack, isPlaying, setIsPlaying, onTogglePlay, onNext, o
             }
         }
     }, [isPlaying, currentTrack]);
+
+    // Handle full-screen mouse movement to show/hide controls
+    useEffect(() => {
+        if (!isFullScreen) {
+            setShowControls(true);
+            if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
+            return;
+        }
+
+        const resetControlsTimeout = () => {
+            setShowControls(true);
+            if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
+            controlsTimeoutRef.current = setTimeout(() => {
+                setShowControls(false);
+            }, 3000);
+        };
+
+        // Initial set
+        resetControlsTimeout();
+
+        return () => {
+            if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
+        };
+    }, [isFullScreen]);
+
+    const handleFullScreenMouseMove = () => {
+        if (!isFullScreen) return;
+        setShowControls(true);
+        if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
+        controlsTimeoutRef.current = setTimeout(() => {
+            setShowControls(false);
+        }, 3000);
+    };
 
     // --- Three.js Visualizer Setup ---
     useEffect(() => {
@@ -483,14 +518,18 @@ const Player = ({ currentTrack, isPlaying, setIsPlaying, onTogglePlay, onNext, o
     return (
         <>
             {/* Full Screen Visualizer Overlay */}
-            <div className={`fixed inset-0 z-[100] bg-black transition-all duration-700 ease-in-out ${isFullScreen ? 'translate-y-0 opacity-100' : 'translate-y-full opacity-0 pointer-events-none'}`}>
+            <div 
+                className={`fixed inset-0 z-[100] bg-black transition-all duration-700 ease-in-out ${isFullScreen ? 'translate-y-0 opacity-100' : 'translate-y-full opacity-0 pointer-events-none'} ${!showControls ? 'cursor-none' : ''}`}
+                onMouseMove={handleFullScreenMouseMove}
+                onClick={handleFullScreenMouseMove}
+            >
                 {/* Three.js Mount Point */}
                 <div ref={fullScreenMountRef} className="absolute inset-0 w-full h-full" />
                 
                 {/* Top Controls */}
-                <div className="absolute top-8 right-8 z-20">
+                <div className={`absolute top-8 right-8 z-20 transition-opacity duration-500 ${showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
                     <button 
-                        onClick={() => setIsFullScreen(false)}
+                        onClick={(e) => { e.stopPropagation(); setIsFullScreen(false); }}
                         className="bg-white/10 hover:bg-white/20 p-3 rounded-full text-white backdrop-blur-md transition-all border border-white/20 hover:rotate-90 duration-300"
                     >
                         <FaCompressAlt size={24} />
@@ -498,8 +537,8 @@ const Player = ({ currentTrack, isPlaying, setIsPlaying, onTogglePlay, onNext, o
                 </div>
 
                 {/* Center Overlay Content - Minimalist */}
-                <div className="absolute inset-x-0 bottom-0 pb-16 z-10 pointer-events-none flex flex-col items-center justify-end">
-                    <div className="text-center pointer-events-auto max-w-2xl px-8">
+                <div className={`absolute inset-x-0 bottom-0 pb-16 z-10 flex flex-col items-center justify-end transition-opacity duration-500 ${showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+                    <div className="text-center max-w-2xl px-8" onClick={(e) => e.stopPropagation()}>
                         <h1 className="text-4xl md:text-6xl font-black text-white mb-4 tracking-tight drop-shadow-[0_0_15px_rgba(255,255,255,0.5)] animate-pulse-slow">{currentTrack.title}</h1>
                         <h2 className="text-xl md:text-3xl text-cyan-300 font-medium mb-10 drop-shadow-[0_0_10px_rgba(65,209,255,0.5)]">{currentTrack.artist}</h2>
 

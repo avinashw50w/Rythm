@@ -20,7 +20,12 @@ const Layout = ({ children, currentTrack, isPlaying, onTogglePlay, setIsPlaying,
                         {user ? (
                             <div className="flex items-center gap-2 cursor-pointer hover:bg-[#282828] p-1 pr-3 rounded-full transition-colors" onClick={logout} title="Click to logout">
                                 {user.avatar_url ? (
-                                    <img src={user.avatar_url} alt={user.name} className="w-8 h-8 rounded-full" />
+                                    <img 
+                                        src={user.avatar_url} 
+                                        alt={user.name} 
+                                        className="w-8 h-8 rounded-full" 
+                                        referrerPolicy="no-referrer"
+                                    />
                                 ) : (
                                     <div className="w-8 h-8 bg-gray-500 rounded-full flex items-center justify-center text-xs">{user.name[0]}</div>
                                 )}
