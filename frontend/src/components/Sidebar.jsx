@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { FaHome, FaSearch, FaBook, FaPlusSquare, FaHeart, FaCog, FaUserCircle, FaMusic } from 'react-icons/fa';
+import { FaHome, FaSearch, FaBook, FaPlusSquare, FaHeart, FaMusic } from 'react-icons/fa';
 import { useAuth } from '../context/AuthContext';
 import client from '../api/client';
 
@@ -26,13 +26,11 @@ const Sidebar = ({ hasPlayer }) => {
             setPlaylists([]);
         }
 
-        // Listen for updates
         const handlePlaylistUpdate = () => {
             fetchPlaylists();
         };
 
         window.addEventListener('playlist-updated', handlePlaylistUpdate);
-
         return () => {
             window.removeEventListener('playlist-updated', handlePlaylistUpdate);
         };
@@ -43,61 +41,81 @@ const Sidebar = ({ hasPlayer }) => {
     const NavItem = ({ to, icon: Icon, label, active }) => (
         <Link
             to={to}
-            className={`flex items-center gap-4 px-4 py-3 transition-all duration-200 rounded-md group ${active ? 'text-white bg-[#282828]' : 'text-[#b3b3b3] hover:text-white hover:bg-[#121212]'
+            className={`flex items-center gap-4 px-6 py-2 transition-all duration-200 group ${active ? 'text-white' : 'text-[#b3b3b3] hover:text-white'
                 }`}
         >
-            <Icon size={24} className={`transition-transform duration-200 group-hover:scale-105 ${active ? 'text-white' : ''}`} />
-            <span className={`font-bold text-sm ${active ? 'text-white' : ''}`}>{label}</span>
+            <Icon size={24} className={active ? 'text-white' : 'text-[#b3b3b3] group-hover:text-white'} />
+            <span className={`font-bold text-sm truncate`}>{label}</span>
         </Link>
     );
 
     return (
-        <div className={`w-64 bg-black h-full flex flex-col p-2 gap-2 ${hasPlayer ? 'pb-28' : 'pb-2'}`}>
+        <div className="w-64 bg-black h-full flex flex-col flex-shrink-0">
             {/* Logo Area */}
-            <div className="px-6 py-5 mb-2">
-                <h1 className="text-2xl font-black tracking-tighter flex items-center gap-2">
-                    <span className="w-8 h-8 bg-gradient-to-br from-purple-500 to-indigo-600 rounded-full flex items-center justify-center text-white text-lg">R</span>
-                    Rythm
-                </h1>
+            <div className="px-6 py-6">
+                <Link to="/" className="flex items-center gap-2 text-white">
+                    <div className="w-8 h-8 bg-white rounded-full flex items-center justify-center">
+                        <span className="text-black font-black text-xl">R</span>
+                    </div>
+                    <span className="text-2xl font-bold tracking-tighter">Rythm</span>
+                </Link>
             </div>
 
-            <nav className="flex flex-col gap-1 px-2">
+            {/* Main Nav */}
+            <nav className="flex flex-col gap-2 mb-6">
                 <NavItem to="/" icon={FaHome} label="Home" active={isActive('/')} />
                 <NavItem to="/search" icon={FaSearch} label="Search" active={isActive('/search')} />
-                <NavItem to="/library" icon={FaBook} label="Your Library" active={isActive('/library')} />
             </nav>
 
-            <div className="mt-6 px-2">
-                <div className="flex flex-col gap-1">
-                    <NavItem to="/create-playlist" icon={FaPlusSquare} label="Create Playlist" active={isActive('/create-playlist')} />
-                    <NavItem to="/liked-songs" icon={FaHeart} label="Liked Songs" active={isActive('/liked-songs')} />
+            {/* Library Section */}
+            <div className="flex-1 flex flex-col overflow-hidden bg-[#121212] mx-2 mb-2 rounded-lg pt-4">
+                <div className="px-6 mb-2 flex items-center justify-between text-[#b3b3b3] hover:text-white transition-colors cursor-pointer group">
+                    <Link to="/library" className="flex items-center gap-2">
+                        <FaBook className="group-hover:text-white" />
+                        <span className="font-bold text-sm">Your Library</span>
+                    </Link>
+                    <Link to="/create-playlist" className="hover:bg-[#282828] p-1 rounded-full text-[#b3b3b3] hover:text-white">
+                        <FaPlusSquare size={18} />
+                    </Link>
                 </div>
-            </div>
 
-            {/* Playlists */}
-            {user && playlists.length > 0 && (
-                <div className="mt-4 px-2 flex-1 overflow-y-auto">
-                    <div className="border-t border-[#282828] pt-4">
-                        <h3 className="px-4 text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Playlists</h3>
-                        <div className="flex flex-col gap-1">
+                {/* Fixed Library Items */}
+                <div className="mt-2 mb-4 flex flex-col gap-2">
+                    <Link 
+                        to="/liked-songs"
+                        className={`flex items-center gap-3 px-6 py-2 group cursor-pointer ${isActive('/liked-songs') ? 'bg-[#282828]' : 'hover:bg-[#1a1a1a]'}`}
+                    >
+                        <div className="w-8 h-8 bg-gradient-to-br from-[#450af5] to-[#c4efd9] flex items-center justify-center rounded-sm opacity-70 group-hover:opacity-100">
+                            <FaHeart className="text-white text-xs" />
+                        </div>
+                        <span className={`text-sm font-bold ${isActive('/liked-songs') ? 'text-white' : 'text-[#b3b3b3] group-hover:text-white'}`}>Liked Songs</span>
+                    </Link>
+                </div>
+
+                {/* Playlist Scroll Area */}
+                <div className="flex-1 overflow-y-auto px-6 pb-24 custom-scrollbar">
+                    {user && playlists.length > 0 ? (
+                        <div className="flex flex-col gap-3 mt-2">
                             {playlists.map(playlist => (
                                 <Link
                                     key={playlist.id}
                                     to={`/playlist/${playlist.id}`}
-                                    className={`flex items-center gap-3 px-4 py-2 rounded-md transition-colors ${isActive(`/playlist/${playlist.id}`) ? 'bg-[#282828] text-white' : 'text-[#b3b3b3] hover:text-white hover:bg-[#121212]'}`}
+                                    className={`text-sm truncate cursor-pointer transition-colors ${isActive(`/playlist/${playlist.id}`) ? 'text-white' : 'text-[#b3b3b3] hover:text-white'}`}
                                 >
-                                    <FaMusic size={14} className="flex-shrink-0" />
-                                    <span className="text-sm truncate">{playlist.name}</span>
+                                    {playlist.name}
                                 </Link>
                             ))}
                         </div>
-                    </div>
+                    ) : (
+                        <div className="mt-4 p-4 bg-[#242424] rounded-lg">
+                            <p className="text-white font-bold text-sm mb-1">Create your first playlist</p>
+                            <p className="text-xs text-white mb-4">It's easy, we'll help you.</p>
+                            <Link to="/create-playlist" className="bg-white text-black text-xs font-bold px-4 py-2 rounded-full inline-block hover:scale-105 transition-transform">
+                                Create playlist
+                            </Link>
+                        </div>
+                    )}
                 </div>
-            )}
-
-            <div className="mt-auto px-2 pb-4 border-t border-[#282828] pt-4">
-                <NavItem to="/profile" icon={FaUserCircle} label="Profile" active={isActive('/profile') || location.pathname.startsWith('/profile')} />
-                <NavItem to="/settings" icon={FaCog} label="Settings" active={isActive('/settings')} />
             </div>
         </div>
     );

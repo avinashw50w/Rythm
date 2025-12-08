@@ -1,99 +1,132 @@
 import React, { useEffect, useState } from 'react';
 import client from '../api/client';
 import TrackList from '../components/TrackList';
+import { FaPlay, FaMusic } from 'react-icons/fa';
+import { Link } from 'react-router-dom';
 
 const Home = ({ onPlay }) => {
     const [tracks, setTracks] = useState([]);
     const [greeting, setGreeting] = useState('Good morning');
-    const [searchQuery, setSearchQuery] = useState('');
-    const [filter, setFilter] = useState('All'); // All, Artists, Albums
+    const [artists, setArtists] = useState([]);
+    const [albums, setAlbums] = useState([]);
 
     useEffect(() => {
-        const fetchTracks = async () => {
+        const fetchData = async () => {
             try {
-                const res = await client.get('/tracks/?public_only=true'); // Only fetch public tracks for home
-                setTracks(res.data);
+                // Fetch tracks
+                const tracksRes = await client.get('/tracks/?public_only=true');
+                setTracks(tracksRes.data);
+
+                // For demo purposes, extract unique albums/artists from tracks 
+                // In a real app, these would be separate endpoints
+                const uniqueArtists = [...new Map(tracksRes.data.map(item => [item.artist_id, item])).values()];
+                setArtists(uniqueArtists.slice(0, 6));
+
+                const uniqueAlbums = [...new Map(tracksRes.data.filter(t=>t.album_id).map(item => [item.album_id, item])).values()];
+                setAlbums(uniqueAlbums.slice(0, 6));
+
             } catch (error) {
-                console.error('Error fetching tracks:', error);
+                console.error('Error fetching data:', error);
             }
         };
 
-        fetchTracks();
+        fetchData();
 
         const hour = new Date().getHours();
         if (hour >= 12 && hour < 18) setGreeting('Good afternoon');
         else if (hour >= 18) setGreeting('Good evening');
     }, []);
 
-    const filteredTracks = tracks.filter(track => {
-        const query = searchQuery.toLowerCase();
-        const matchesSearch =
-            track.title.toLowerCase().includes(query) ||
-            track.artist.toLowerCase().includes(query) ||
-            (track.album && track.album.toLowerCase().includes(query));
-
-        if (filter === 'All') return matchesSearch;
-        if (filter === 'Artists') return matchesSearch && track.artist.toLowerCase().includes(query);
-        if (filter === 'Albums') return matchesSearch && (track.album && track.album.toLowerCase().includes(query));
-        return matchesSearch;
-    });
+    const handlePlayCard = (e, track) => {
+        e.preventDefault();
+        e.stopPropagation();
+        onPlay(track, tracks);
+    };
 
     return (
-        <div className="bg-gradient-to-b from-[#202020] to-[#121212] min-h-full p-8 pb-32">
-            {/* Greeting & Search */}
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
-                <h1 className="text-3xl font-bold text-white">{greeting}</h1>
-                <div className="relative w-full md:w-96">
-                    <input
-                        type="text"
-                        placeholder="What do you want to play?"
-                        className="w-full bg-[#333] text-white rounded-full py-3 px-10 focus:outline-none focus:ring-2 focus:ring-white placeholder-gray-400"
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                    />
-                    <svg className="absolute left-3 top-3.5 h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+        <div className="bg-gradient-to-b from-[#1e1e1e] to-[#121212] min-h-full p-8 pb-32">
+            {/* Greeting */}
+            <h1 className="text-3xl font-bold text-white mb-6 tracking-tight">{greeting}</h1>
+
+            {/* Shortcuts Grid (Top 6 Items) */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-10">
+                {albums.slice(0, 6).map((item) => (
+                    <Link 
+                        to={`/album/${item.album_id}`} 
+                        key={`shortcut-${item.album_id}`} 
+                        className="bg-[#303030] hover:bg-[#454545] transition-colors rounded overflow-hidden flex items-center gap-4 group cursor-pointer h-20"
+                    >
+                        <div className="h-20 w-20 flex-shrink-0 bg-[#282828] shadow-lg relative">
+                            {item.album_art_path ? (
+                                <img src={`http://localhost:8000/${item.album_art_path}`} className="w-full h-full object-cover" />
+                            ) : (
+                                <div className="w-full h-full flex items-center justify-center text-gray-500"><FaMusic /></div>
+                            )}
+                        </div>
+                        <span className="font-bold text-white truncate pr-4">{item.album}</span>
+                        
+                        {/* Play Button on Hover */}
+                        <div className="ml-auto mr-4 opacity-0 group-hover:opacity-100 transition-opacity shadow-xl">
+                            <button 
+                                onClick={(e) => handlePlayCard(e, item)}
+                                className="w-10 h-10 bg-[#1ed760] rounded-full flex items-center justify-center hover:scale-105"
+                            >
+                                <FaPlay size={16} className="text-black ml-1" />
+                            </button>
+                        </div>
+                    </Link>
+                ))}
+            </div>
+
+            {/* Section: Made For You */}
+            <div className="mb-8">
+                <div className="flex items-center justify-between mb-4">
+                    <h2 className="text-2xl font-bold text-white hover:underline cursor-pointer">Made For You</h2>
+                    <span className="text-xs font-bold text-[#b3b3b3] hover:underline cursor-pointer tracking-widest">SHOW ALL</span>
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-6">
+                    {tracks.slice(0, 5).map(track => (
+                        <div key={track.id} className="bg-[#181818] p-4 rounded-md hover:bg-[#282828] transition-colors group cursor-pointer">
+                            <div className="relative mb-4">
+                                <div className="aspect-square bg-[#333] shadow-[0_8px_24px_rgba(0,0,0,0.5)] rounded-md overflow-hidden">
+                                    {track.album_art_path ? (
+                                        <img src={`http://localhost:8000/${track.album_art_path}`} className="w-full h-full object-cover" />
+                                    ) : (
+                                        <div className="w-full h-full flex items-center justify-center text-gray-500"><FaMusic size={40}/></div>
+                                    )}
+                                </div>
+                                <button 
+                                    onClick={(e) => handlePlayCard(e, track)}
+                                    className="absolute bottom-2 right-2 w-12 h-12 bg-[#1ed760] rounded-full flex items-center justify-center shadow-xl opacity-0 translate-y-2 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-300 hover:scale-105"
+                                >
+                                    <FaPlay size={20} className="text-black ml-1" />
+                                </button>
+                            </div>
+                            <h3 className="font-bold text-white mb-1 truncate">{track.title}</h3>
+                            <p className="text-sm text-[#b3b3b3] line-clamp-2">{track.artist}</p>
+                        </div>
+                    ))}
                 </div>
             </div>
 
-            {/* Filters */}
-            <div className="flex gap-2 mb-8">
-                {['All', 'Artists', 'Albums'].map(f => (
-                    <button
-                        key={f}
-                        onClick={() => setFilter(f)}
-                        className={`px-4 py-1 rounded-full text-sm font-bold transition-colors ${filter === f ? 'bg-white text-black' : 'bg-[#333] text-white hover:bg-[#444]'}`}
-                    >
-                        {f}
-                    </button>
-                ))}
+            {/* Section: Popular Artists */}
+            <div className="mb-8">
+                <h2 className="text-2xl font-bold text-white mb-4 hover:underline cursor-pointer">Popular Artists</h2>
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-6">
+                    {artists.map(item => (
+                        <Link to={`/artist/${item.artist_id}`} key={item.artist_id} className="bg-[#181818] p-4 rounded-md hover:bg-[#282828] transition-colors group">
+                            <div className="aspect-square bg-[#333] shadow-[0_8px_24px_rgba(0,0,0,0.5)] rounded-full overflow-hidden mb-4">
+                                {/* Placeholder for artist image if we don't have one on track object easily */}
+                                <div className="w-full h-full flex items-center justify-center bg-[#333] text-gray-500">
+                                    <FaMusic size={40} />
+                                </div>
+                            </div>
+                            <h3 className="font-bold text-white mb-1 truncate">{item.artist}</h3>
+                            <p className="text-sm text-[#b3b3b3]">Artist</p>
+                        </Link>
+                    ))}
+                </div>
             </div>
-
-            {/* Recent/Featured Grid (Placeholder for now, using tracks as "cards" for demo) */}
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 mb-8">
-                {filteredTracks.slice(0, 6).map(track => (
-                    <div
-                        key={track.id}
-                        className="bg-[#2a2a2a] hover:bg-[#3a3a3a] transition-colors rounded-md overflow-hidden flex items-center gap-4 pr-4 cursor-pointer group"
-                        onClick={() => onPlay(track)}
-                    >
-                        <div className="w-20 h-20 bg-[#333] flex-shrink-0 shadow-lg">
-                            {track.album_art_path ? (
-                                <img src={`http://localhost:8000/${track.album_art_path}`} className="w-full h-full object-cover" />
-                            ) : (
-                                <div className="w-full h-full flex items-center justify-center text-gray-500 font-bold text-xl">♪</div>
-                            )}
-                        </div>
-                        <span className="font-bold text-white truncate">{track.title}</span>
-                        <div className="ml-auto bg-green-500 rounded-full p-3 shadow-lg opacity-0 group-hover:opacity-100 translate-y-2 group-hover:translate-y-0 transition-all">
-                            <svg role="img" height="16" width="16" aria-hidden="true" viewBox="0 0 16 16" fill="black"><path d="M3 1.713a.7.7 0 0 1 1.05-.607l10.89 6.288a.7.7 0 0 1 0 1.212L4.05 14.894A.7.7 0 0 1 3 14.288V1.713z"></path></svg>
-                        </div>
-                    </div>
-                ))}
-            </div>
-
-            {/* Main Track List */}
-            <h2 className="text-2xl font-bold mb-4 text-white">Made For You</h2>
-            <TrackList tracks={filteredTracks} onPlay={onPlay} />
         </div>
     );
 };

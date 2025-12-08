@@ -1,7 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { FaPlay, FaPause, FaStepForward, FaStepBackward, FaVolumeUp, FaVolumeMute, FaExpandAlt, FaCompressAlt } from 'react-icons/fa';
+import { FaPlay, FaPause, FaStepForward, FaStepBackward, FaVolumeUp, FaVolumeMute, FaExpandAlt, FaCompressAlt, FaHeart, FaRegHeart } from 'react-icons/fa';
 import { useNavigate, Link } from 'react-router-dom';
 import * as THREE from 'three';
+import client from '../api/client';
+import { useUI } from '../context/UIContext';
 
 const Player = ({ currentTrack, isPlaying, setIsPlaying, onTogglePlay, onNext, onPrev, hasNext, hasPrev }) => {
     const [currentTime, setCurrentTime] = useState(0);
@@ -9,10 +11,11 @@ const Player = ({ currentTrack, isPlaying, setIsPlaying, onTogglePlay, onNext, o
     const [volume, setVolume] = useState(1);
     const [isFullScreen, setIsFullScreen] = useState(false);
     const [showControls, setShowControls] = useState(true);
+    const [isFavorite, setIsFavorite] = useState(false);
     
     const audioRef = useRef(null);
-    const navigate = useNavigate();
     const controlsTimeoutRef = useRef(null);
+    const { showToast } = useUI();
 
     // Audio API refs
     const audioContextRef = useRef(null);
@@ -21,8 +24,6 @@ const Player = ({ currentTrack, isPlaying, setIsPlaying, onTogglePlay, onNext, o
     const dataArrayRef = useRef(null);
 
     // Canvas refs
-    const canvasRef = useRef(null); // Footer visualizer
-    const miniCanvasRef = useRef(null); // Album art overlay visualizer
     const fullScreenMountRef = useRef(null); // Div to mount Three.js
 
     // Three.js refs
@@ -34,6 +35,23 @@ const Player = ({ currentTrack, isPlaying, setIsPlaying, onTogglePlay, onNext, o
     const albumArtMeshRef = useRef(null);
     const starsRef = useRef(null);
     const groupRef = useRef(null);
+
+    useEffect(() => {
+        if (currentTrack) {
+            setIsFavorite(currentTrack.is_favorite);
+        }
+    }, [currentTrack]);
+
+    const toggleFavorite = async () => {
+        if (!currentTrack) return;
+        try {
+            const res = await client.post(`/users/favorites/${currentTrack.id}`);
+            setIsFavorite(res.data.is_favorite);
+            showToast(res.data.is_favorite ? 'Added to Liked Songs' : 'Removed from Liked Songs', 'success');
+        } catch (error) {
+            console.error(error);
+        }
+    };
 
     // Initialize Audio Context (Lazy)
     const initAudioContext = () => {
@@ -109,22 +127,9 @@ const Player = ({ currentTrack, isPlaying, setIsPlaying, onTogglePlay, onNext, o
         }, 3000);
     };
 
-    // --- Three.js Visualizer Setup ---
+    // --- Three.js Visualizer Lifecycle: INIT ---
     useEffect(() => {
-        if (!isFullScreen || !fullScreenMountRef.current) {
-            // Cleanup if exiting full screen
-            if (rendererRef.current) {
-                rendererRef.current.dispose();
-                if (fullScreenMountRef.current.contains(rendererRef.current.domElement)) {
-                    fullScreenMountRef.current.removeChild(rendererRef.current.domElement);
-                }
-                rendererRef.current = null;
-            }
-            if (animationFrameRef.current) {
-                cancelAnimationFrame(animationFrameRef.current);
-            }
-            return;
-        }
+        if (!isFullScreen || !fullScreenMountRef.current) return;
 
         // Initialize Scene
         const scene = new THREE.Scene();
@@ -204,44 +209,20 @@ const Player = ({ currentTrack, isPlaying, setIsPlaying, onTogglePlay, onNext, o
         mainGroup.add(barsMesh); // Add to group
         barsMeshRef.current = barsMesh;
 
-        // 2. Center Album Art Disc
+        // 2. Center Album Art Disc (Geometry only, texture set in separate effect)
         const discRadius = radius - 1.5;
         const artGeometry = new THREE.CylinderGeometry(discRadius, discRadius, 0.2, 64);
         artGeometry.rotateX(Math.PI / 2); // Face Z axis
         
-        const loader = new THREE.TextureLoader();
-        let artTexture;
-        
-        if (currentTrack.album_art_path) {
-            artTexture = loader.load(`http://localhost:8000/${currentTrack.album_art_path}`);
-            artTexture.colorSpace = THREE.SRGBColorSpace;
-        } else {
-            const canvas = document.createElement('canvas');
-            canvas.width = 512;
-            canvas.height = 512;
-            const ctx = canvas.getContext('2d');
-            const grad = ctx.createRadialGradient(256,256, 50, 256,256, 256);
-            grad.addColorStop(0, '#111');
-            grad.addColorStop(1, '#000');
-            ctx.fillStyle = grad;
-            ctx.fillRect(0,0,512,512);
-            ctx.fillStyle = '#41D1FF';
-            ctx.font = 'bold 200px Arial';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillText('♪', 256, 256);
-            artTexture = new THREE.CanvasTexture(canvas);
-        }
-        
         const artMaterial = new THREE.MeshStandardMaterial({ 
-            map: artTexture,
+            color: 0x111111, // Default dark grey
             roughness: 0.4,
             metalness: 0.2
         });
         
         const artMesh = new THREE.Mesh(artGeometry, [
             new THREE.MeshBasicMaterial({ color: 0x000000 }), // Side
-            artMaterial, // Top
+            artMaterial, // Top (Index 1) - This is where the texture goes
             new THREE.MeshBasicMaterial({ color: 0x000000 })  // Bottom
         ]);
         mainGroup.add(artMesh);
@@ -384,12 +365,25 @@ const Player = ({ currentTrack, isPlaying, setIsPlaying, onTogglePlay, onNext, o
         };
         window.addEventListener('resize', handleResize);
 
+        // Cleanup
         return () => {
             window.removeEventListener('resize', handleResize);
+            if (animationFrameRef.current) {
+                cancelAnimationFrame(animationFrameRef.current);
+            }
             if (rendererRef.current) {
                 rendererRef.current.dispose();
+                if (fullScreenMountRef.current && rendererRef.current.domElement) {
+                    try {
+                        fullScreenMountRef.current.removeChild(rendererRef.current.domElement);
+                    } catch (e) {
+                        console.warn("Could not remove canvas", e);
+                    }
+                }
+                rendererRef.current = null;
             }
-            // Cleanup geometries
+            
+            // Dispose Geometries/Materials
             geometry.dispose();
             material.dispose();
             artGeometry.dispose();
@@ -400,79 +394,64 @@ const Player = ({ currentTrack, isPlaying, setIsPlaying, onTogglePlay, onNext, o
             ringMat.dispose();
         };
 
-    }, [isFullScreen, currentTrack]); 
+    }, [isFullScreen]); 
 
-    // --- Footer & Mini Canvas Logic (2D) ---
+    // --- Three.js Visualizer Lifecycle: TRACK UPDATE ---
     useEffect(() => {
-        const draw2DVisualizers = () => {
-            // Keep running even if full screen (or pause if you want to save resources)
-            if (!analyserRef.current || !dataArrayRef.current) {
-                requestAnimationFrame(draw2DVisualizers);
-                return;
-            }
+        if (!isFullScreen || !albumArtMeshRef.current || !currentTrack) return;
 
-            const analyser = analyserRef.current;
-            const dataArray = dataArrayRef.current;
-            analyser.getByteFrequencyData(dataArray);
+        // Dispose old texture to free memory
+        const material = albumArtMeshRef.current.material[1]; // Top face
+        if (material.map) {
+            material.map.dispose();
+        }
 
-            // 1. Draw Mini Footer Canvas
-            if (canvasRef.current) {
-                const canvas = canvasRef.current;
-                const ctx = canvas.getContext('2d');
-                const width = canvas.width;
-                const height = canvas.height;
-                // Downsample for visualizer
-                const bufferLength = analyser.frequencyBinCount; 
-                // We want ~16 bars.
-                const step = Math.floor(bufferLength / 32); // Skip higher freqs
-
-                ctx.clearRect(0, 0, width, height);
-
-                const barCount = 16;
-                const barWidth = (width / barCount);
-
-                for (let i = 0; i < barCount; i++) {
-                    // Average a range
-                    let val = 0;
-                    for(let j=0; j<step; j++) val += dataArray[(i*step)+j];
-                    val /= step;
-
-                    const barHeight = (val / 255) * height;
-                    const x = i * barWidth;
-                    
-                    ctx.fillStyle = '#4ade80';
-                    ctx.fillRect(x, height - barHeight, barWidth - 2, barHeight);
-                }
-            }
-
-            // 2. Draw Mini Album Overlay
-            if (miniCanvasRef.current && isPlaying) {
-                const canvas = miniCanvasRef.current;
-                const ctx = canvas.getContext('2d');
-                const width = canvas.width;
-                const height = canvas.height;
-                const step = Math.floor(analyser.frequencyBinCount / 16);
-
-                ctx.clearRect(0, 0, width, height);
-                const barCount = 8;
-                for (let i = 0; i < barCount; i++) {
-                    let val = 0;
-                    for(let j=0; j<step; j++) val += dataArray[(i*step)+j];
-                    val /= step;
-
-                    const barHeight = (val / 255) * height;
-                    ctx.fillStyle = 'rgba(34, 197, 94, 0.8)';
-                    ctx.fillRect(i * (width/barCount), height - barHeight, (width/barCount) - 1, barHeight);
-                }
-            }
-
-            requestAnimationFrame(draw2DVisualizers);
+        const updateTexture = (texture) => {
+            if (!albumArtMeshRef.current) return;
+            texture.colorSpace = THREE.SRGBColorSpace;
+            albumArtMeshRef.current.material[1].map = texture;
+            albumArtMeshRef.current.material[1].needsUpdate = true;
         };
 
-        if (isPlaying) {
-            draw2DVisualizers();
+        if (currentTrack.album_art_path) {
+            const loader = new THREE.TextureLoader();
+            loader.load(
+                `http://localhost:8000/${currentTrack.album_art_path}`,
+                updateTexture,
+                undefined,
+                (err) => console.error("Error loading texture:", err)
+            );
+        } else {
+            // Generate fallback texture
+            const canvas = document.createElement('canvas');
+            canvas.width = 512;
+            canvas.height = 512;
+            const ctx = canvas.getContext('2d');
+            
+            // Gradient Background
+            const grad = ctx.createRadialGradient(256, 256, 50, 256, 256, 256);
+            grad.addColorStop(0, '#333');
+            grad.addColorStop(1, '#000');
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, 512, 512);
+            
+            // Text/Icon
+            ctx.fillStyle = '#41D1FF';
+            ctx.font = 'bold 200px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('♪', 256, 256);
+            
+            // Song Title (Small)
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 40px Arial';
+            ctx.fillText(currentTrack.title.substring(0, 15), 256, 400);
+
+            const texture = new THREE.CanvasTexture(canvas);
+            updateTexture(texture);
         }
-    }, [isPlaying]);
+
+    }, [currentTrack, isFullScreen]);
 
 
     const handleTimeUpdate = () => {
@@ -562,7 +541,7 @@ const Player = ({ currentTrack, isPlaying, setIsPlaying, onTogglePlay, onNext, o
             </div>
 
             {/* Standard Footer Player */}
-            <div className="fixed bottom-0 left-0 right-0 glass-player text-white p-4 h-24 flex items-center justify-between z-50 px-6 border-t border-[#333]">
+            <div className="fixed bottom-0 left-0 right-0 bg-black text-white px-4 h-[90px] flex items-center justify-between z-50 border-t border-[#282828]">
                 <audio
                     ref={audioRef}
                     src={`http://localhost:8000/tracks/${currentTrack.id}/stream`}
@@ -574,107 +553,110 @@ const Player = ({ currentTrack, isPlaying, setIsPlaying, onTogglePlay, onNext, o
                     }}
                 />
 
-                {/* Track Info */}
-                <div className="flex items-center gap-4 w-1/3 min-w-0">
-                    <div className="w-14 h-14 bg-[#282828] rounded-md shadow-lg overflow-hidden flex-shrink-0 relative group">
+                {/* Left: Track Info */}
+                <div className="flex items-center gap-4 w-[30%] min-w-[180px]">
+                    <div className="relative group w-14 h-14 bg-[#282828] rounded shadow-lg overflow-hidden flex-shrink-0">
                         {currentTrack.album_art_path ? (
                             <img src={`http://localhost:8000/${currentTrack.album_art_path}`} alt="Album Art" className="w-full h-full object-cover" />
                         ) : (
-                            <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-gray-700 to-gray-900">
-                                <span className="text-xs text-gray-400">No Art</span>
+                            <div className="w-full h-full flex items-center justify-center bg-gray-800">
+                                <span className="text-xs text-gray-400">♪</span>
                             </div>
                         )}
-                        
-                        {/* Mini Visualizer Overlay */}
-                        {isPlaying && (
-                            <div className="absolute bottom-0 left-0 right-0 h-4 bg-black/40 backdrop-blur-[1px]">
-                                <canvas
-                                    ref={miniCanvasRef}
-                                    width={56}
-                                    height={16}
-                                    className="w-full h-full"
-                                />
-                            </div>
-                        )}
-
-                        {/* Expand Button Overlay */}
                         <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center cursor-pointer" onClick={() => setIsFullScreen(true)}>
-                            <button 
-                                className="text-white hover:text-green-400 transform hover:scale-110 transition-all"
-                                title="Full Screen Visualizer"
-                            >
-                                <FaExpandAlt size={16} />
+                            <button className="text-white hover:text-green-400 transform hover:scale-110 transition-all">
+                                <FaExpandAlt size={14} />
                             </button>
                         </div>
                     </div>
-                    <div className="overflow-hidden min-w-0">
-                        <Link to={`/track/${currentTrack.id}`} className="font-bold text-sm truncate hover:underline cursor-pointer block text-white">
+                    <div className="overflow-hidden min-w-0 flex flex-col justify-center">
+                        <Link to={`/track/${currentTrack.id}`} className="font-medium text-sm text-white hover:underline truncate">
                             {currentTrack.title}
                         </Link>
-                        <div className="text-xs text-gray-400 truncate">{currentTrack.artist}</div>
+                        <span className="text-xs text-[#b3b3b3] truncate hover:text-white hover:underline cursor-pointer">
+                            {currentTrack.artist}
+                        </span>
                     </div>
+                    <button 
+                        onClick={toggleFavorite} 
+                        className={`ml-2 text-[#b3b3b3] hover:text-white ${isFavorite ? 'text-green-500 hover:text-green-400' : ''}`}
+                    >
+                        {isFavorite ? <FaHeart size={16} /> : <FaRegHeart size={16} />}
+                    </button>
                 </div>
 
-                {/* Controls */}
-                <div className="flex flex-col items-center gap-2 w-1/3">
-                    <div className="flex items-center gap-6">
+                {/* Center: Controls */}
+                <div className="flex flex-col items-center max-w-[40%] w-full gap-1">
+                    <div className="flex items-center gap-6 mb-1">
+                        <button className="text-[#b3b3b3] hover:text-white transition-colors" title="Shuffle (Coming soon)">
+                            <svg role="img" height="16" width="16" viewBox="0 0 16 16" fill="currentColor" className="opacity-70"><path d="M13.151.922a.75.75 0 1 0-1.06 1.06L13.109 3H11.16a3.75 3.75 0 0 0-2.873 1.34l-6.173 7.356A2.25 2.25 0 0 1 .39 12.5H0V14h.391a3.75 3.75 0 0 0 2.873-1.34l6.173-7.356a2.25 2.25 0 0 1 1.724-.804h1.947l-1.017 1.018a.75.75 0 0 0 1.06 1.06L15.98 3.75 13.15.922zM.391 3.5H0V2h.391c1.109 0 2.16.49 2.873 1.34L4.89 5.277l-.979 1.167-1.796-2.14A2.25 2.25 0 0 0 .39 3.5z"></path><path d="m7.5 10.723.98-1.167.957 1.14a2.25 2.25 0 0 0 1.724.804h1.947l-1.017-1.018a.75.75 0 1 1 1.06-1.06l2.829 2.828-2.829 2.828a.75.75 0 1 1-1.06-1.06L13.109 13H11.16a3.75 3.75 0 0 1-2.873-1.34l-.787-.938z"></path></svg>
+                        </button>
                         <button 
-                            className={`text-gray-400 hover:text-white transition-colors ${!hasPrev ? 'opacity-30 cursor-not-allowed' : ''}`}
+                            className={`text-[#b3b3b3] hover:text-white transition-colors ${!hasPrev ? 'opacity-30 cursor-not-allowed' : ''}`}
                             onClick={onPrev}
                             disabled={!hasPrev}
                         >
-                            <FaStepBackward size={18} />
+                            <FaStepBackward size={20} />
                         </button>
                         <button
-                            className="w-10 h-10 bg-white rounded-full flex items-center justify-center text-black hover:scale-105 transition-transform"
+                            className="w-8 h-8 bg-white rounded-full flex items-center justify-center text-black hover:scale-105 transition-transform"
                             onClick={onTogglePlay}
                         >
-                            {isPlaying ? <FaPause size={16} /> : <FaPlay size={16} className="ml-1" />}
+                            {isPlaying ? <FaPause size={12} /> : <FaPlay size={12} className="ml-0.5" />}
                         </button>
                         <button 
-                            className={`text-gray-400 hover:text-white transition-colors ${!hasNext ? 'opacity-30 cursor-not-allowed' : ''}`}
+                            className={`text-[#b3b3b3] hover:text-white transition-colors ${!hasNext ? 'opacity-30 cursor-not-allowed' : ''}`}
                             onClick={onNext}
                             disabled={!hasNext}
                         >
-                            <FaStepForward size={18} />
+                            <FaStepForward size={20} />
+                        </button>
+                        <button className="text-[#b3b3b3] hover:text-white transition-colors" title="Repeat (Coming soon)">
+                            <svg role="img" height="16" width="16" viewBox="0 0 16 16" fill="currentColor" className="opacity-70"><path d="M0 4.75A3.75 3.75 0 0 1 3.75 1h8.5A3.75 3.75 0 0 1 16 4.75v5a3.75 3.75 0 0 1-3.75 3.75h-8.5A3.75 3.75 0 0 1 0 9.75v-5zm3.75-2.25a2.25 2.25 0 0 0-2.25 2.25v5c0 1.243 1.008 2.25 2.25 2.25h8.5a2.25 2.25 0 0 0 2.25-2.25v-5a2.25 2.25 0 0 0-2.25-2.25h-8.5z"></path></svg>
                         </button>
                     </div>
-                    <div className="flex items-center gap-2 w-full max-w-md">
-                        <span className="text-xs text-gray-400 w-10 text-right">{formatTime(currentTime)}</span>
-                        <input
-                            type="range"
-                            min="0"
-                            max={duration || 0}
-                            value={currentTime}
-                            onChange={handleSeek}
-                            className="w-full h-1 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-white hover:accent-green-500"
-                        />
-                        <span className="text-xs text-gray-400 w-10">{formatTime(duration)}</span>
+                    <div className="flex items-center gap-2 w-full text-xs font-medium text-[#b3b3b3] group">
+                        <span className="min-w-[40px] text-right">{formatTime(currentTime)}</span>
+                        <div className="relative flex-1 h-1 bg-[#4d4d4d] rounded-full group-hover:h-1.5 transition-all">
+                            <div 
+                                className="absolute top-0 left-0 h-full bg-white group-hover:bg-[#1db954] rounded-full"
+                                style={{ width: `${(currentTime / (duration || 1)) * 100}%` }}
+                            ></div>
+                            <input
+                                type="range"
+                                min="0"
+                                max={duration || 0}
+                                value={currentTime}
+                                onChange={handleSeek}
+                                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                            />
+                        </div>
+                        <span className="min-w-[40px]">{formatTime(duration)}</span>
                     </div>
                 </div>
 
-                {/* Volume & Visualizer */}
-                <div className="flex items-center justify-end gap-4 w-1/3">
-                    {/* Canvas Visualizer */}
-                    <canvas
-                        ref={canvasRef}
-                        width={96}
-                        height={32}
-                        className="rounded opacity-50 hidden md:block"
-                    />
-
-                    <button onClick={() => setVolume(volume === 0 ? 1 : 0)}>
-                        {volume === 0 ? <FaVolumeMute size={18} className="text-gray-400" /> : <FaVolumeUp size={18} className="text-gray-400" />}
-                    </button>
-                    <input
-                        type="range"
-                        min="0"
-                        max="1"
-                        step="0.01"
-                        value={volume}
-                        onChange={handleVolumeChange}
-                        className="w-24 h-1 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-white hover:accent-green-500"
-                    />
+                {/* Right: Volume & Extra */}
+                <div className="flex items-center justify-end gap-2 w-[30%]">
+                    <div className="flex items-center gap-2 w-32 group">
+                        <button onClick={() => setVolume(volume === 0 ? 1 : 0)} className="text-[#b3b3b3] hover:text-white">
+                            {volume === 0 ? <FaVolumeMute size={16} /> : <FaVolumeUp size={16} />}
+                        </button>
+                        <div className="relative flex-1 h-1 bg-[#4d4d4d] rounded-full">
+                            <div 
+                                className="absolute top-0 left-0 h-full bg-[#b3b3b3] group-hover:bg-[#1db954] rounded-full"
+                                style={{ width: `${volume * 100}%` }}
+                            ></div>
+                            <input
+                                type="range"
+                                min="0"
+                                max="1"
+                                step="0.01"
+                                value={volume}
+                                onChange={handleVolumeChange}
+                                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                            />
+                        </div>
+                    </div>
                 </div>
             </div>
         </>

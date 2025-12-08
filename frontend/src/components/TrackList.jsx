@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { FaPlay, FaPause, FaClock, FaHeart, FaRegHeart, FaGlobe, FaLock, FaTrash, FaPlus } from 'react-icons/fa';
+import { FaPlay, FaPause, FaClock, FaHeart, FaRegHeart, FaGlobe, FaLock, FaPlus } from 'react-icons/fa';
 import { useAuth } from '../context/AuthContext';
 import { useUI } from '../context/UIContext';
 import client from '../api/client';
@@ -57,28 +57,6 @@ const TrackList = ({ tracks, onPlay, currentTrack, isPlaying, onTogglePlay, hide
         }
     };
 
-    const handlePublish = async (e, track) => {
-        e.stopPropagation();
-
-        const action = track.is_public ? "unpublish" : "publish";
-        
-        confirmAction(`Are you sure you want to ${action} "${track.title}"?`, async () => {
-            try {
-                const newStatus = !track.is_public;
-                await client.put(`/tracks/${track.id}/publish?publish=${newStatus}`);
-
-                // Update local state to reflect change immediately
-                setLocalTracks(prev => prev.map(t =>
-                    t.id === track.id ? { ...t, is_public: newStatus } : t
-                ));
-                showToast(`Track ${action}ed successfully`, 'success');
-            } catch (error) {
-                console.error("Error updating publish status:", error);
-                showToast("Failed to update publish status", 'error');
-            }
-        }, `Confirm ${action}`);
-    };
-
     const handleFavorite = async (e, track) => {
         e.stopPropagation();
         if (!user) {
@@ -98,129 +76,144 @@ const TrackList = ({ tracks, onPlay, currentTrack, isPlaying, onTogglePlay, hide
         }
     };
 
+    const handlePublish = async (e, track) => {
+        e.stopPropagation();
+        const action = track.is_public ? "unpublish" : "publish";
+        confirmAction(`Are you sure you want to ${action} "${track.title}"?`, async () => {
+            try {
+                const newStatus = !track.is_public;
+                await client.put(`/tracks/${track.id}/publish?publish=${newStatus}`);
+                setLocalTracks(prev => prev.map(t => t.id === track.id ? { ...t, is_public: newStatus } : t));
+                showToast(`Track ${action}ed successfully`, 'success');
+            } catch (error) {
+                console.error("Error updating publish status:", error);
+                showToast("Failed to update publish status", 'error');
+            }
+        }, `Confirm ${action}`);
+    };
+
     const gridCols = hideAlbumColumn
-        ? "grid-cols-[16px_4fr_2fr_minmax(120px,1fr)]"
-        : "grid-cols-[16px_4fr_3fr_2fr_minmax(120px,1fr)]";
+        ? "grid-cols-[40px_minmax(0,1fr)_120px]"
+        : "grid-cols-[40px_minmax(0,4fr)_minmax(0,3fr)_120px]";
 
     return (
-        <div className="flex flex-col">
+        <div className="flex flex-col w-full">
             {/* Header */}
-            <div className={`grid ${gridCols} gap-4 px-4 py-2 border-b border-[#282828] text-sm text-[#b3b3b3] bg-[#121212] font-bold uppercase`}>
-                <span>#</span>
+            <div className={`grid ${gridCols} gap-4 px-4 py-2 text-xs font-medium text-[#b3b3b3] uppercase border-b border-[#282828] sticky top-0 bg-[#121212] z-10`}>
+                <span className="text-center">#</span>
                 <span>Title</span>
                 {!hideAlbumColumn && <span>Album</span>}
-                <span>Date Added</span>
-                <span className="flex justify-end"><FaClock /></span>
+                <span className="text-right flex justify-end pr-8"><FaClock size={14} /></span>
             </div>
 
             {/* Tracks */}
             <div className="mt-2">
                 {localTracks.map((track, index) => {
                     const isCurrent = currentTrack && currentTrack.id === track.id;
+                    const isPlayingCurrent = isCurrent && isPlaying;
                     return (
                         <div
                             key={track.id}
-                            className={`grid ${gridCols} gap-4 px-4 py-3 hover:bg-[#2a2a2a] rounded-md group transition-colors cursor-pointer items-center ${isCurrent ? 'bg-[#2a2a2a]' : ''}`}
+                            className={`grid ${gridCols} gap-4 px-4 py-2 hover:bg-[#2a2a2a] rounded-md group transition-colors cursor-pointer items-center`}
                             onClick={(e) => handlePlayClick(e, track)}
                         >
-                            <div className="text-[#b3b3b3] text-sm group-hover:hidden">
-                                {isCurrent && isPlaying ? (
-                                    <FaPause size={10} />
-                                ) : (
-                                    index + 1
-                                )}
-                            </div>
-                            <div className={`hidden group-hover:block ${isCurrent ? 'text-green-500' : 'text-white'}`}>
-                                {isCurrent && isPlaying ? <FaPause size={10} /> : <FaPlay size={10} />}
+                            {/* Index / Play Button */}
+                            <div className="flex items-center justify-center text-[#b3b3b3] text-sm w-5 h-5">
+                                <span className={`group-hover:hidden ${isCurrent ? 'text-[#1ed760]' : ''}`}>
+                                    {isPlayingCurrent ? (
+                                        <img src="https://open.spotifycdn.com/cdn/images/equaliser-animated-green.f93a2ef4.gif" alt="playing" className="w-3 h-3" />
+                                    ) : (
+                                        index + 1
+                                    )}
+                                </span>
+                                <span className="hidden group-hover:block text-white">
+                                    {isPlayingCurrent ? <FaPause size={12} /> : <FaPlay size={12} />}
+                                </span>
                             </div>
 
-                            <div className="flex items-center gap-4 overflow-hidden">
+                            {/* Title & Artist */}
+                            <div className="flex items-center gap-3 overflow-hidden">
                                 {track.album_art_path ? (
-                                    <img src={`http://localhost:8000/${track.album_art_path}`} alt="" className="w-10 h-10 flex-shrink-0 rounded shadow-sm object-cover" />
+                                    <img src={`http://localhost:8000/${track.album_art_path}`} alt="" className="w-10 h-10 rounded-sm object-cover shadow-md" />
                                 ) : (
-                                    <div className="w-10 h-10 flex-shrink-0 bg-[#282828] rounded flex items-center justify-center text-xs text-gray-500">
-                                        <span className="font-bold">♪</span>
+                                    <div className="w-10 h-10 bg-[#282828] rounded-sm flex items-center justify-center text-gray-500">
+                                        <span className="text-xs font-bold">♪</span>
                                     </div>
                                 )}
                                 <div className="flex flex-col overflow-hidden">
-                                    <span className={`font-medium truncate hover:underline ${isCurrent ? 'text-green-500' : 'text-white'}`}>
+                                    <span className={`font-medium text-base truncate ${isCurrent ? 'text-[#1ed760]' : 'text-white'}`}>
                                         {track.title}
                                     </span>
                                     <Link 
                                         to={`/artist/${track.artist_id}`} 
                                         onClick={e => e.stopPropagation()}
-                                        className="text-sm text-[#b3b3b3] truncate hover:text-white hover:underline transition-colors"
+                                        className="text-sm text-[#b3b3b3] truncate hover:text-white hover:underline"
                                     >
                                         {track.artist}
                                     </Link>
                                 </div>
                             </div>
 
+                            {/* Album */}
                             {!hideAlbumColumn && (
-                                <div className="text-[#b3b3b3] text-sm truncate group-hover:text-white transition-colors hover:underline">
+                                <div className="text-[#b3b3b3] text-sm truncate hover:text-white hover:underline">
                                     <Link to={`/album/${track.album_id}`} onClick={(e) => e.stopPropagation()}>
                                         {track.album || 'Unknown Album'}
                                     </Link>
                                 </div>
                             )}
 
-                            <div className="text-[#b3b3b3] text-sm truncate">2 days ago</div> {/* Placeholder for date added */}
+                            {/* Actions & Duration */}
+                            <div className="flex items-center justify-end gap-3 text-[#b3b3b3] text-sm opacity-0 group-hover:opacity-100 transition-opacity pr-2">
+                                <button
+                                    onClick={(e) => handleFavorite(e, track)}
+                                    className={`hover:text-white ${track.is_favorite ? 'text-[#1ed760] opacity-100' : ''}`}
+                                >
+                                    {track.is_favorite ? <FaHeart size={14} /> : <FaRegHeart size={14} />}
+                                </button>
 
-                            <div className="flex items-center justify-end gap-4 text-[#b3b3b3] text-sm">
-                                {/* Publish Button (Only for owner AND explicitly allowed) */}
-                                {user && track.uploader_name === user.name && allowManage && (
+                                {allowManage && user && track.uploader_name === user.name && (
                                     <button
                                         onClick={(e) => handlePublish(e, track)}
-                                        className={`hover:text-white transition-opacity ${track.is_public ? 'text-green-500' : 'text-gray-500'}`}
-                                        title={track.is_public ? "Public (Click to unpublish)" : "Private (Click to publish)"}
+                                        className="hover:text-white"
+                                        title={track.is_public ? "Make Private" : "Publish"}
                                     >
-                                        {track.is_public ? <FaGlobe /> : <FaLock />}
+                                        {track.is_public ? <FaGlobe size={14} /> : <FaLock size={14} />}
                                     </button>
                                 )}
 
-                                <button
-                                    onClick={(e) => handleFavorite(e, track)}
-                                    className={`hover:text-white transition-opacity ${track.is_favorite ? 'opacity-100 text-green-500' : 'opacity-0 group-hover:opacity-100'}`}
-                                    title={track.is_favorite ? "Remove from Favorites" : "Add to Favorites"}
-                                >
-                                    {track.is_favorite ? <FaHeart /> : <FaRegHeart />}
-                                </button>
-
-                                {/* Add to Playlist Menu */}
-                                {user && (
-                                    <div className="relative">
-                                        <button
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                setOpenMenuTrackId(openMenuTrackId === track.id ? null : track.id);
-                                            }}
-                                            className="opacity-0 group-hover:opacity-100 hover:text-white transition-opacity"
-                                            title="Add to Playlist"
-                                        >
-                                            <FaPlus />
-                                        </button>
-                                        {openMenuTrackId === track.id && (
-                                            <div className="absolute right-0 bottom-full mb-2 bg-[#282828] rounded-lg shadow-xl z-50 min-w-[200px] py-2 border border-[#333]">
-                                                <div className="px-4 py-2 text-xs text-gray-400 uppercase font-bold border-b border-[#333]">Add to Playlist</div>
-                                                {playlists.length > 0 ? (
-                                                    playlists.map(p => (
-                                                        <button
-                                                            key={p.id}
-                                                            onClick={(e) => handleAddToPlaylist(e, track.id, p.id)}
-                                                            className="w-full text-left px-4 py-2 hover:bg-[#3e3e3e] text-sm text-white transition-colors"
-                                                        >
-                                                            {p.name}
-                                                        </button>
-                                                    ))
-                                                ) : (
-                                                    <div className="px-4 py-2 text-sm text-gray-500">No playlists yet</div>
-                                                )}
-                                            </div>
-                                        )}
-                                    </div>
-                                )}
-
-                                <span>{track.duration ? `${Math.floor(track.duration / 60)}:${('0' + Math.floor(track.duration % 60)).slice(-2)}` : '--:--'}</span>
+                                <div className="relative">
+                                    <button
+                                        onClick={(e) => { e.stopPropagation(); setOpenMenuTrackId(openMenuTrackId === track.id ? null : track.id); }}
+                                        className="hover:text-white"
+                                    >
+                                        <FaPlus size={14} />
+                                    </button>
+                                    {openMenuTrackId === track.id && (
+                                        <div className="absolute right-0 bottom-full mb-2 bg-[#282828] rounded shadow-xl z-50 min-w-[160px] py-1 border border-[#3e3e3e]">
+                                            <div className="px-3 py-1 text-[10px] text-gray-400 uppercase font-bold tracking-wider">Add to Playlist</div>
+                                            {playlists.length > 0 ? (
+                                                playlists.map(p => (
+                                                    <button
+                                                        key={p.id}
+                                                        onClick={(e) => handleAddToPlaylist(e, track.id, p.id)}
+                                                        className="w-full text-left px-3 py-2 hover:bg-[#3e3e3e] text-sm text-white"
+                                                    >
+                                                        {p.name}
+                                                    </button>
+                                                ))
+                                            ) : (
+                                                <div className="px-3 py-2 text-xs text-gray-500">No playlists</div>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                                <span className="w-10 text-right group-hover:text-white transition-colors">{track.duration ? `${Math.floor(track.duration / 60)}:${('0' + Math.floor(track.duration % 60)).slice(-2)}` : '--:--'}</span>
+                            </div>
+                            
+                            {/* Duration (visible when not hovering) */}
+                            <div className="text-[#b3b3b3] text-sm text-right pr-4 absolute right-4 group-hover:hidden">
+                                {track.duration ? `${Math.floor(track.duration / 60)}:${('0' + Math.floor(track.duration % 60)).slice(-2)}` : '--:--'}
                             </div>
                         </div>
                     )
@@ -229,6 +222,5 @@ const TrackList = ({ tracks, onPlay, currentTrack, isPlaying, onTogglePlay, hide
         </div>
     );
 };
-
 
 export default TrackList;
