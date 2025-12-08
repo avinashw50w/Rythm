@@ -4,6 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "setup": "npm i && cd ../backend-node && npm i",
     "dev": "concurrently \"npm run server\" \"npm run client\"",
     "server": "cd ../backend-node && node --watch index.js",
     "client": "vite",
