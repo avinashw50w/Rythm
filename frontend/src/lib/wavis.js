@@ -117,9 +117,8 @@ export default class Wavis {
         // Clear Canvas
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
         
-        // Background
-        this.ctx.fillStyle = '#000000';
-        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+        // No background fill to allow video pass-through
+        // The container div has bg-black for fallback
 
         // Render current visualizer
         const renderFn = this.visualizers[this.currentVisualizer];

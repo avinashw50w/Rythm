@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { FaPlay, FaPause, FaStepForward, FaStepBackward, FaVolumeUp, FaVolumeMute, FaExpandAlt, FaCompressAlt, FaHeart, FaRegHeart, FaMagic, FaChevronUp, FaChevronDown } from 'react-icons/fa';
+import { FaPlay, FaPause, FaStepForward, FaStepBackward, FaVolumeUp, FaVolumeMute, FaExpandAlt, FaCompressAlt, FaHeart, FaRegHeart, FaMagic, FaChevronUp, FaChevronDown, FaVideo } from 'react-icons/fa';
 import { useNavigate, Link } from 'react-router-dom';
 import client from '../api/client';
 import { useUI } from '../context/UIContext';
@@ -15,6 +15,9 @@ const Player = ({ currentTrack, isPlaying, setIsPlaying, onTogglePlay, onNext, o
     const [isFavorite, setIsFavorite] = useState(false);
     const [visualizerName, setVisualizerName] = useState('bars');
     const [showVizMenu, setShowVizMenu] = useState(false);
+    const [availableVideos, setAvailableVideos] = useState([]);
+    const [currentVideo, setCurrentVideo] = useState(null);
+    const [showVideoMenu, setShowVideoMenu] = useState(false);
     
     const audioRef = useRef(null);
     const controlsTimeoutRef = useRef(null);
@@ -27,6 +30,18 @@ const Player = ({ currentTrack, isPlaying, setIsPlaying, onTogglePlay, onNext, o
             setIsFavorite(currentTrack.is_favorite);
         }
     }, [currentTrack]);
+
+    useEffect(() => {
+        const fetchVideos = async () => {
+            try {
+                const res = await client.get('/videos');
+                setAvailableVideos(res.data);
+            } catch (error) {
+                console.error("Failed to fetch videos", error);
+            }
+        };
+        fetchVideos();
+    }, []);
 
     const toggleFavorite = async () => {
         if (!currentTrack) return;
@@ -86,12 +101,12 @@ const Player = ({ currentTrack, isPlaying, setIsPlaying, onTogglePlay, onNext, o
         }
         resetControlsTimeout();
         return () => clearTimeout(controlsTimeoutRef.current);
-    }, [isFullScreen, showVizMenu]);
+    }, [isFullScreen, showVizMenu, showVideoMenu]);
 
     const resetControlsTimeout = () => {
         setShowControls(true);
         if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
-        if (!showVizMenu) { // Don't hide if menu is open
+        if (!showVizMenu && !showVideoMenu) { // Don't hide if menu is open
             controlsTimeoutRef.current = setTimeout(() => {
                 setShowControls(false);
             }, 4000);
@@ -109,6 +124,11 @@ const Player = ({ currentTrack, isPlaying, setIsPlaying, onTogglePlay, onNext, o
             wavisRef.current.setVisualizer(name);
         }
         setShowVizMenu(false);
+    };
+
+    const selectVideo = (video) => {
+        setCurrentVideo(video);
+        setShowVideoMenu(false);
     };
 
     const handleTimeUpdate = () => {
@@ -157,24 +177,38 @@ const Player = ({ currentTrack, isPlaying, setIsPlaying, onTogglePlay, onNext, o
         <>
             {/* Full Screen Visualizer Overlay */}
             <div 
-                className={`fixed inset-0 z-[100] bg-black transition-all duration-700 ease-in-out ${isFullScreen ? 'translate-y-0 opacity-100' : 'translate-y-full opacity-0 pointer-events-none'} ${!showControls && !showVizMenu ? 'cursor-none' : ''}`}
+                className={`fixed inset-0 z-[100] bg-black transition-all duration-700 ease-in-out ${isFullScreen ? 'translate-y-0 opacity-100' : 'translate-y-full opacity-0 pointer-events-none'} ${!showControls && !showVizMenu && !showVideoMenu ? 'cursor-none' : ''}`}
                 onMouseMove={handleFullScreenMouseMove}
                 onClick={handleFullScreenMouseMove}
             >
-                <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" />
+                {/* Background Video */}
+                {currentVideo && (
+                    <video
+                        src={`http://localhost:8000/assets/video_loops/${currentVideo}`}
+                        className="absolute inset-0 w-full h-full object-cover z-0"
+                        autoPlay
+                        loop
+                        muted
+                        playsInline
+                        crossOrigin="anonymous"
+                    />
+                )}
+
+                <canvas ref={canvasRef} className="absolute inset-0 w-full h-full z-10" />
                 
                 {/* Visualizer Controls (Top Right) */}
                 <div className={`absolute top-8 right-8 z-20 flex gap-4 transition-opacity duration-500 ${showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+                    
+                    {/* Visualizer Selection */}
                     <div className="relative">
                         <button
-                            onClick={(e) => { e.stopPropagation(); setShowVizMenu(!showVizMenu); }}
+                            onClick={(e) => { e.stopPropagation(); setShowVizMenu(!showVizMenu); setShowVideoMenu(false); }}
                             className={`bg-black/40 hover:bg-white/20 p-3 rounded-full text-white backdrop-blur-md border border-white/20 hover:scale-110 transition-all ${showVizMenu ? 'bg-white/20' : ''}`}
                             title="Select Visualizer"
                         >
                             <FaMagic size={20} className={visualizerName === 'shockwave' ? 'text-purple-400' : 'text-white'} />
                         </button>
                         
-                        {/* Visualizer Menu */}
                         {showVizMenu && (
                             <div className="absolute right-0 top-full mt-2 w-48 bg-[#181818]/90 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl overflow-hidden py-1 z-50">
                                 {visualizerOptions.map((v) => (
@@ -191,6 +225,42 @@ const Player = ({ currentTrack, isPlaying, setIsPlaying, onTogglePlay, onNext, o
                         )}
                     </div>
 
+                    {/* Background Video Selection */}
+                    <div className="relative">
+                        <button
+                            onClick={(e) => { e.stopPropagation(); setShowVideoMenu(!showVideoMenu); setShowVizMenu(false); }}
+                            className={`bg-black/40 hover:bg-white/20 p-3 rounded-full text-white backdrop-blur-md border border-white/20 hover:scale-110 transition-all ${showVideoMenu ? 'bg-white/20' : ''}`}
+                            title="Select Background Video"
+                        >
+                            <FaVideo size={20} className={currentVideo ? 'text-blue-400' : 'text-white'} />
+                        </button>
+                        
+                        {showVideoMenu && (
+                            <div className="absolute right-0 top-full mt-2 w-64 bg-[#181818]/90 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl overflow-hidden py-1 z-50 max-h-80 overflow-y-auto">
+                                <button
+                                    onClick={(e) => { e.stopPropagation(); selectVideo(null); }}
+                                    className={`w-full text-left px-4 py-3 text-sm font-bold transition-colors flex items-center justify-between ${!currentVideo ? 'text-green-400 bg-white/5' : 'text-white hover:bg-white/10'}`}
+                                >
+                                    None (Black)
+                                    {!currentVideo && <div className="w-2 h-2 rounded-full bg-green-400"></div>}
+                                </button>
+                                {availableVideos.map((video) => (
+                                    <button
+                                        key={video}
+                                        onClick={(e) => { e.stopPropagation(); selectVideo(video); }}
+                                        className={`w-full text-left px-4 py-3 text-sm font-bold transition-colors flex items-center justify-between ${currentVideo === video ? 'text-green-400 bg-white/5' : 'text-white hover:bg-white/10'}`}
+                                    >
+                                        <span className="truncate">{video}</span>
+                                        {currentVideo === video && <div className="w-2 h-2 rounded-full bg-green-400 flex-shrink-0 ml-2"></div>}
+                                    </button>
+                                ))}
+                                {availableVideos.length === 0 && (
+                                    <div className="px-4 py-3 text-sm text-gray-400 italic">No videos found in assets/video_loops</div>
+                                )}
+                            </div>
+                        )}
+                    </div>
+
                     <button 
                         onClick={(e) => { e.stopPropagation(); setIsFullScreen(false); }}
                         className="bg-black/40 hover:bg-white/20 p-3 rounded-full text-white backdrop-blur-md border border-white/20 hover:scale-110 transition-all"
@@ -200,10 +270,10 @@ const Player = ({ currentTrack, isPlaying, setIsPlaying, onTogglePlay, onNext, o
                 </div>
 
                 {/* Center Overlay Content - Minimalist */}
-                <div className={`absolute inset-x-0 bottom-0 pb-16 z-10 flex flex-col items-center justify-end transition-opacity duration-500 ${showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+                <div className={`absolute inset-x-0 bottom-0 pb-16 z-20 flex flex-col items-center justify-end transition-opacity duration-500 ${showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
                     <div className="text-center max-w-2xl px-8" onClick={(e) => e.stopPropagation()}>
-                        <h1 className="text-4xl md:text-6xl font-black text-white mb-4 tracking-tight drop-shadow-[0_0_15px_rgba(255,255,255,0.5)] line-clamp-2">{currentTrack.title}</h1>
-                        <h2 className="text-xl md:text-3xl text-cyan-300 font-medium mb-10 drop-shadow-[0_0_10px_rgba(65,209,255,0.5)] truncate">{currentTrack.artist}</h2>
+                        <h1 className="text-4xl md:text-6xl font-black text-white mb-4 tracking-tight drop-shadow-[0_0_15px_rgba(0,0,0,0.8)] line-clamp-2">{currentTrack.title}</h1>
+                        <h2 className="text-xl md:text-3xl text-cyan-300 font-medium mb-10 drop-shadow-[0_0_10px_rgba(0,0,0,0.8)] truncate">{currentTrack.artist}</h2>
 
                         {/* Controls */}
                         <div className="flex items-center justify-center gap-12 backdrop-blur-md bg-black/30 p-6 rounded-full border border-white/10 shadow-2xl">

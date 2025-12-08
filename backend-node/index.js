@@ -34,6 +34,17 @@ app.use('/uploads', express.static(uploadsDir, {
     }
 }));
 
+// Serve video loops
+const videoLoopsDir = path.join(__dirname, '..', 'assets', 'video_loops');
+if (fs.existsSync(videoLoopsDir)) {
+    app.use('/assets/video_loops', express.static(videoLoopsDir, {
+        setHeaders: (res, path, stat) => {
+            res.set('Access-Control-Allow-Origin', '*');
+            res.set('Cross-Origin-Resource-Policy', 'cross-origin');
+        }
+    }));
+}
+
 // Routes
 const authRoutes = require('./routes/auth');
 const tracksRoutes = require('./routes/tracks');
@@ -50,6 +61,22 @@ app.use('/playlists', playlistsRoutes);
 app.use('/albums', albumsRoutes);
 app.use('/artists', artistsRoutes);
 app.use('/search', searchRoutes);
+
+// New route to list videos
+app.get('/videos', (req, res) => {
+    if (!fs.existsSync(videoLoopsDir)) {
+        return res.json([]);
+    }
+    fs.readdir(videoLoopsDir, (err, files) => {
+        if (err) {
+            console.error(err);
+            return res.status(500).json({ error: 'Failed to list videos' });
+        }
+        // Filter for video files
+        const videos = files.filter(file => /\.(mp4|webm|mov)$/i.test(file));
+        res.json(videos);
+    });
+});
 
 // Root endpoint
 app.get('/', (req, res) => {
