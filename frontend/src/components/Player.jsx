@@ -541,7 +541,7 @@ const Player = ({ currentTrack, isPlaying, setIsPlaying, onTogglePlay, onNext, o
             </div>
 
             {/* Standard Footer Player */}
-            <div className="fixed bottom-0 left-0 right-0 bg-black text-white px-4 h-[90px] flex items-center justify-between z-50 border-t border-[#282828]">
+            <div className="fixed bottom-0 left-0 right-0 bg-black text-white px-4 h-[90px] flex items-center justify-between z-[90] border-t border-[#282828]">
                 <audio
                     ref={audioRef}
                     src={`http://localhost:8000/tracks/${currentTrack.id}/stream`}

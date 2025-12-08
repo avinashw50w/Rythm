@@ -3,7 +3,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import client from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useUI } from '../context/UIContext';
-import { FaPlay, FaPause, FaEdit, FaSave, FaTimes, FaMusic, FaGlobe, FaLock, FaCamera, FaTrash } from 'react-icons/fa';
+import { FaPlay, FaPause, FaEdit, FaSave, FaTimes, FaMusic, FaGlobe, FaLock, FaCamera, FaTrash, FaHeart } from 'react-icons/fa';
 
 const TrackDetails = ({ onPlay, currentTrack, isPlaying, onTogglePlay, onUpdateTrack }) => {
     const { trackId } = useParams();
@@ -46,7 +46,6 @@ const TrackDetails = ({ onPlay, currentTrack, isPlaying, onTogglePlay, onUpdateT
     }, [trackId, navigate]);
 
     const handleSave = async (e) => {
-        // Prevent default if called from a form, though we use type="button" now to be safe
         if (e) e.preventDefault();
         
         setSaving(true);
@@ -137,12 +136,15 @@ const TrackDetails = ({ onPlay, currentTrack, isPlaying, onTogglePlay, onUpdateT
     const isOwner = user && user.id === track.uploader_id;
     const isCurrentTrack = currentTrack?.id === track.id;
 
+    // Gradient background based on a static color for now (simulating extraction from album art)
+    const bgColor = 'from-[#535353]';
+
     return (
-        <div className="text-white p-8 max-w-6xl mx-auto">
+        <div className="text-white pb-32">
             {/* Header Section */}
-            <div className="flex flex-col md:flex-row gap-8 mb-12">
+            <div className={`flex flex-col md:flex-row gap-8 p-8 pt-24 bg-gradient-to-b ${bgColor} to-[#121212] items-end`}>
                 {/* Album Art */}
-                <div className="w-64 h-64 flex-shrink-0 bg-[#282828] shadow-2xl rounded-lg flex items-center justify-center overflow-hidden relative group">
+                <div className="w-64 h-64 flex-shrink-0 bg-[#282828] shadow-[0_8px_40px_rgba(0,0,0,0.5)] flex items-center justify-center overflow-hidden relative group rounded-sm">
                     {track.album_art_path ? (
                         <img src={`http://localhost:8000/${track.album_art_path}`} alt={track.album} className="w-full h-full object-cover" />
                     ) : (
@@ -150,112 +152,102 @@ const TrackDetails = ({ onPlay, currentTrack, isPlaying, onTogglePlay, onUpdateT
                     )}
 
                     {/* Overlay with play button and optional upload for owners */}
-                    <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                        <div className="flex gap-4">
-                            <button onClick={handlePlay}>
-                                <div className="bg-green-500 rounded-full p-4 shadow-lg transform hover:scale-105 transition-transform">
-                                    {isCurrentTrack && isPlaying ? (
-                                        <FaPause className="text-black text-xl" />
-                                    ) : (
-                                        <FaPlay className="text-black text-xl ml-1" />
-                                    )}
-                                </div>
-                            </button>
-
-                            {isOwner && (
-                                <label className="bg-white/20 rounded-full p-4 shadow-lg transform hover:scale-105 transition-transform cursor-pointer">
-                                    <FaCamera className="text-white text-xl" />
-                                    <input
-                                        type="file"
-                                        accept="image/*"
-                                        className="hidden"
-                                        onChange={handleThumbnailUpload}
-                                    />
-                                </label>
-                            )}
-                        </div>
-                    </div>
+                    {isOwner && (
+                        <label className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center cursor-pointer transition-opacity">
+                            <FaCamera className="text-white text-3xl" />
+                            <input
+                                type="file"
+                                accept="image/*"
+                                className="hidden"
+                                onChange={handleThumbnailUpload}
+                            />
+                        </label>
+                    )}
                 </div>
 
                 {/* Info */}
-                <div className="flex flex-col justify-end flex-grow">
-                    <div className="flex items-center gap-2 mb-2">
-                        <span className="uppercase text-xs font-bold tracking-wider text-gray-400">Song</span>
+                <div className="flex flex-col gap-2 flex-grow min-w-0">
+                    <div className="flex items-center gap-2">
+                        <span className="uppercase text-xs font-bold tracking-wider text-white">Song</span>
                         {track.is_public ? (
-                            <FaGlobe className="text-gray-400 text-xs" title="Public" />
+                            <FaGlobe className="text-white/70 text-xs" title="Public" />
                         ) : (
-                            <FaLock className="text-gray-400 text-xs" title="Private" />
+                            <FaLock className="text-white/70 text-xs" title="Private" />
                         )}
                     </div>
 
                     {isEditing ? (
-                        <div className="space-y-4 mb-4 bg-[#282828] p-6 rounded-lg border border-gray-700">
+                        <div className="space-y-4 mb-4 bg-black/40 backdrop-blur-md p-6 rounded-lg border border-white/10 max-w-2xl">
                             <div>
-                                <label className="block text-xs text-gray-400 mb-1">Title</label>
+                                <label className="block text-xs font-bold text-gray-400 mb-1 uppercase">Title</label>
                                 <input
                                     type="text"
                                     value={editForm.title}
                                     onChange={e => setEditForm({ ...editForm, title: e.target.value })}
-                                    className="w-full bg-[#3e3e3e] text-white px-3 py-2 rounded focus:outline-none focus:ring-2 focus:ring-green-500 text-3xl font-bold"
+                                    className="w-full bg-transparent border-b border-white/50 text-white px-0 py-2 text-2xl font-bold focus:outline-none focus:border-green-500 placeholder-gray-600"
+                                    placeholder="Title"
                                 />
                             </div>
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
-                                    <label className="block text-xs text-gray-400 mb-1">Artist</label>
+                                    <label className="block text-xs font-bold text-gray-400 mb-1 uppercase">Artist</label>
                                     <input
                                         type="text"
                                         value={editForm.artist}
                                         onChange={e => setEditForm({ ...editForm, artist: e.target.value })}
-                                        className="w-full bg-[#3e3e3e] text-white px-3 py-2 rounded focus:outline-none focus:ring-2 focus:ring-green-500"
+                                        className="w-full bg-white/10 text-white px-3 py-2 rounded focus:outline-none placeholder-gray-500"
+                                        placeholder="Artist"
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-xs text-gray-400 mb-1">Album</label>
+                                    <label className="block text-xs font-bold text-gray-400 mb-1 uppercase">Album</label>
                                     <input
                                         type="text"
                                         value={editForm.album}
                                         onChange={e => setEditForm({ ...editForm, album: e.target.value })}
-                                        className="w-full bg-[#3e3e3e] text-white px-3 py-2 rounded focus:outline-none focus:ring-2 focus:ring-green-500"
+                                        className="w-full bg-white/10 text-white px-3 py-2 rounded focus:outline-none placeholder-gray-500"
+                                        placeholder="Album"
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-xs text-gray-400 mb-1">Genre</label>
+                                    <label className="block text-xs font-bold text-gray-400 mb-1 uppercase">Genre</label>
                                     <input
                                         type="text"
                                         value={editForm.genre}
                                         onChange={e => setEditForm({ ...editForm, genre: e.target.value })}
-                                        className="w-full bg-[#3e3e3e] text-white px-3 py-2 rounded focus:outline-none focus:ring-2 focus:ring-green-500"
+                                        className="w-full bg-white/10 text-white px-3 py-2 rounded focus:outline-none placeholder-gray-500"
+                                        placeholder="Genre"
                                     />
                                 </div>
                             </div>
                             <div className="flex gap-3 pt-2">
-                                {/* Use type="button" and explicit onClick to prevent double-click issues often found with form submits */}
                                 <button 
                                     type="button" 
                                     onClick={handleSave} 
                                     disabled={saving} 
-                                    className="bg-green-500 text-black px-6 py-2 rounded-full font-bold hover:scale-105 transition-transform flex items-center gap-2 disabled:opacity-50 disabled:scale-100"
+                                    className="bg-green-500 text-black px-6 py-2 rounded-full font-bold hover:scale-105 transition-transform flex items-center gap-2"
                                 >
                                     <FaSave /> {saving ? 'Saving...' : 'Save'}
                                 </button>
-                                <button type="button" onClick={() => setIsEditing(false)} className="bg-transparent border border-gray-500 text-white px-6 py-2 rounded-full font-bold hover:border-white transition-colors flex items-center gap-2">
+                                <button type="button" onClick={() => setIsEditing(false)} className="bg-transparent border border-white/50 text-white px-6 py-2 rounded-full font-bold hover:border-white transition-colors flex items-center gap-2">
                                     <FaTimes /> Cancel
                                 </button>
                             </div>
                         </div>
                     ) : (
                         <>
-                            <h1 className="text-3xl md:text-5xl font-black mb-4 leading-tight">{track.title}</h1>
-                            <div className="flex items-center gap-2 text-gray-300 font-medium text-sm md:text-base">
+                            <h1 className="text-4xl md:text-7xl font-black mb-4 leading-none tracking-tight">{track.title}</h1>
+                            <div className="flex items-center gap-2 text-white font-medium text-sm md:text-base">
+                                {user && user.avatar_url && <img src={user.avatar_url} className="w-6 h-6 rounded-full" />}
                                 {track.artist && (
                                     <>
-                                        <Link to={`/artist/${track.artist_id}`} className="text-white hover:underline cursor-pointer">{track.artist}</Link>
+                                        <Link to={`/artist/${track.artist_id}`} className="hover:underline font-bold">{track.artist}</Link>
                                         <span>•</span>
                                     </>
                                 )}
                                 {track.album && (
                                     <>
-                                        <Link to={`/album/${track.album_id}`} className="hover:underline cursor-pointer">{track.album}</Link>
+                                        <Link to={`/album/${track.album_id}`} className="hover:underline">{track.album}</Link>
                                         <span>•</span>
                                     </>
                                 )}
@@ -269,85 +261,86 @@ const TrackDetails = ({ onPlay, currentTrack, isPlaying, onTogglePlay, onUpdateT
                             </div>
                         </>
                     )}
-
-                    {!isEditing && (
-                        <div className="mt-6 flex items-center gap-4">
-                            <button
-                                onClick={handlePlay}
-                                className="bg-green-500 text-black rounded-full p-4 hover:scale-105 transition-transform shadow-lg"
-                            >
-                                {isCurrentTrack && isPlaying ? <FaPause size={24} /> : <FaPlay size={24} className="ml-1" />}
-                            </button>
-
-                            {isOwner && (
-                                <>
-                                    <button
-                                        onClick={togglePublish}
-                                        className={`flex items-center gap-2 text-sm font-bold px-4 py-2 rounded-full border ${track.is_public ? 'border-green-500 text-green-500' : 'border-gray-500 text-gray-400'}`}
-                                        title={track.is_public ? 'Click to make private' : 'Click to publish'}
-                                    >
-                                        {track.is_public ? (
-                                            <>
-                                                <FaGlobe /> Published
-                                            </>
-                                        ) : (
-                                            <>
-                                                <FaLock /> Private
-                                            </>
-                                        )}
-                                    </button>
-
-                                    <button
-                                        onClick={() => setIsEditing(true)}
-                                        className="text-gray-400 hover:text-white transition-colors p-2"
-                                        title="Edit Details"
-                                    >
-                                        <FaEdit size={24} />
-                                    </button>
-
-                                    <button
-                                        onClick={handleDelete}
-                                        className="text-gray-400 hover:text-red-500 transition-colors p-2"
-                                        title="Delete Track"
-                                    >
-                                        <FaTrash size={24} />
-                                    </button>
-                                </>
-                            )}
-                        </div>
-                    )}
                 </div>
             </div>
 
-            {/* Additional Details / Recommended */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                <div className="md:col-span-2">
-                    <h2 className="text-2xl font-bold mb-4">Recommended</h2>
-                    <div className="bg-[#181818] rounded-lg p-6 text-center text-gray-400">
-                        <p>Recommended tracks based on this song will appear here.</p>
-                        <p className="text-sm mt-2">(Recommendation engine coming soon)</p>
+            {/* Action Bar */}
+            <div className="px-8 py-6 bg-gradient-to-b from-[#121212]/30 to-[#121212] flex items-center gap-8 mb-8">
+                <button
+                    onClick={handlePlay}
+                    className="w-14 h-14 bg-[#1ed760] rounded-full flex items-center justify-center hover:scale-105 transition-transform shadow-lg text-black"
+                >
+                    {isCurrentTrack && isPlaying ? <FaPause size={24} /> : <FaPlay size={24} className="ml-1" />}
+                </button>
+                
+                <button className={`text-[#b3b3b3] hover:text-white transition-colors ${track.is_favorite ? 'text-[#1ed760]' : ''}`}>
+                    <FaHeart size={32} />
+                </button>
+
+                {isOwner && !isEditing && (
+                    <div className="ml-auto flex items-center gap-4">
+                        <button
+                            onClick={togglePublish}
+                            className="text-gray-400 hover:text-white"
+                            title={track.is_public ? 'Make Private' : 'Publish'}
+                        >
+                            {track.is_public ? <FaGlobe size={20} /> : <FaLock size={20} />}
+                        </button>
+                        <button onClick={() => setIsEditing(true)} className="text-gray-400 hover:text-white">
+                            <FaEdit size={20} />
+                        </button>
+                        <button onClick={handleDelete} className="text-gray-400 hover:text-red-500">
+                            <FaTrash size={20} />
+                        </button>
+                    </div>
+                )}
+            </div>
+
+            {/* Lyrics & Credits Split */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 px-8">
+                {/* Lyrics Placeholder */}
+                <div>
+                    <h2 className="text-2xl font-bold mb-4">Lyrics</h2>
+                    <div className="bg-[#2a2a2a] p-8 rounded-lg text-gray-400 text-lg leading-loose min-h-[400px]">
+                        <p>Lyrics are not available for this track yet.</p>
+                        <p className="mt-4 italic opacity-50">Imagine the words here...</p>
                     </div>
                 </div>
 
+                {/* Credits */}
                 <div>
                     <h2 className="text-2xl font-bold mb-4">Credits</h2>
-                    <div className="bg-[#181818] rounded-lg p-6 space-y-4">
-                        <div>
-                            <Link to={`/artist/${track.artist_id}`} className="text-white font-bold hover:underline block">{track.artist || 'Unknown Artist'}</Link>
-                            <p className="text-sm text-gray-400">Main Artist</p>
-                        </div>
-                        <div>
-                            <h3 className="text-white font-bold">{track.uploader_name}</h3>
-                            <p className="text-sm text-gray-400">Uploaded By</p>
-                        </div>
-                        <div className="pt-4 border-t border-gray-700">
-                            <div className="flex justify-between text-sm text-gray-400 mb-1">
-                                <span>Format</span>
-                                <span>MP3 / {track.bitrate}</span>
+                    <div className="space-y-6">
+                        <div className="flex items-center justify-between group cursor-pointer hover:bg-[#2a2a2a] p-2 rounded -mx-2 transition-colors">
+                            <div>
+                                <h3 className="text-white font-bold">{track.artist}</h3>
+                                <p className="text-sm text-gray-400">Main Artist</p>
                             </div>
-                            <div className="flex justify-between text-sm text-gray-400">
-                                <span>Size</span>
-                                <span>{(track.size / 1024 / 1024).toFixed(2)} MB</span>
+                            <button className="border border-gray-500 text-white px-3 py-1 rounded-full text-xs font-bold uppercase opacity-0 group-hover:opacity-100 transition-opacity">Follow</button>
+                        </div>
+                        
+                        <div className="flex items-center justify-between hover:bg-[#2a2a2a] p-2 rounded -mx-2 transition-colors">
+                            <div>
+                                <h3 className="text-white font-bold">{track.uploader_name}</h3>
+                                <p className="text-sm text-gray-400">Uploaded By</p>
+                            </div>
+                        </div>
+
+                        <div className="pt-6 border-t border-gray-800">
+                            <h3 className="text-white font-bold mb-2">Technical Info</h3>
+                            <div className="grid grid-cols-2 gap-4 text-sm text-gray-400">
+                                <div>
+                                    <span className="block text-gray-500 text-xs">Bitrate</span>
+                                    {track.bitrate}
+                                </div>
+                                <div>
+                                    <span className="block text-gray-500 text-xs">Size</span>
+                                    {(track.size / 1024 / 1024).toFixed(2)} MB
+                                </div>
+                                <div>
+                                    <span className="block text-gray-500 text-xs">Format</span>
+                                    MP3
+                                </div>
                             </div>
                         </div>
                     </div>

@@ -13,6 +13,7 @@ import AlbumDetails from './pages/AlbumDetails';
 import ArtistDetails from './pages/ArtistDetails';
 import LikedSongs from './pages/LikedSongs';
 import PlaylistDetails from './pages/PlaylistDetails';
+import Search from './pages/Search';
 
 import { AuthProvider } from './context/AuthContext';
 
@@ -83,6 +84,14 @@ function App() {
           <Routes>
             <Route path="/" element={
               <Home
+                onPlay={handlePlayTrack}
+                currentTrack={currentTrack}
+                isPlaying={isPlaying}
+                onTogglePlay={togglePlay}
+              />
+            } />
+            <Route path="/search" element={
+              <Search
                 onPlay={handlePlayTrack}
                 currentTrack={currentTrack}
                 isPlaying={isPlaying}

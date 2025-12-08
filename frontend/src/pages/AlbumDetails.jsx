@@ -14,7 +14,7 @@ const AlbumDetails = ({ onPlay, currentTrack, isPlaying, onTogglePlay }) => {
     const [album, setAlbum] = useState(null);
     const [loading, setLoading] = useState(true);
     const [isEditing, setIsEditing] = useState(false);
-    const [editForm, setEditForm] = useState({ new_name: '', artist: '', genre: '' });
+    const [editForm, setEditForm] = useState({ new_name: '', artist: '' });
 
     useEffect(() => {
         fetchAlbum();
@@ -27,7 +27,6 @@ const AlbumDetails = ({ onPlay, currentTrack, isPlaying, onTogglePlay }) => {
             setEditForm({
                 new_name: res.data.name,
                 artist: res.data.artist || '',
-                genre: '' 
             });
         } catch (error) {
             console.error('Error fetching album:', error);
@@ -46,11 +45,60 @@ const AlbumDetails = ({ onPlay, currentTrack, isPlaying, onTogglePlay }) => {
         }
     };
 
+    const handleThumbnailUpload = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const formData = new FormData();
+        formData.append('file', file);
+
+        try {
+            const res = await client.post(`/tracks/album/${album.id}/thumbnail`, formData, {
+                headers: { 'Content-Type': 'multipart/form-data' }
+            });
+            setAlbum(prev => ({ ...prev, album_art_path: res.data.album_art_path }));
+            showToast('Album art updated', 'success');
+        } catch (error) {
+            console.error("Error uploading album art:", error);
+            showToast("Failed to upload album art", 'error');
+        }
+    };
+
+    const handleSave = async () => {
+        try {
+            const res = await client.put(`/albums/${albumId}`, editForm);
+            setAlbum(prev => ({ 
+                ...prev, 
+                name: editForm.new_name,
+                artist: editForm.artist 
+            }));
+            setIsEditing(false);
+            showToast('Album updated', 'success');
+        } catch (error) {
+            console.error('Error updating album:', error);
+            showToast('Failed to update album', 'error');
+        }
+    };
+
+    const handleDelete = async () => {
+        confirmAction("Are you sure you want to delete this album and all its tracks?", async () => {
+            try {
+                await client.delete(`/albums/${albumId}`);
+                navigate('/');
+                showToast('Album deleted', 'success');
+            } catch (error) {
+                console.error("Error deleting album:", error);
+                showToast("Failed to delete album", 'error');
+            }
+        }, "Delete Album");
+    };
+
     if (loading) return <div className="text-white p-8">Loading...</div>;
     if (!album) return <div className="text-white p-8">Album not found</div>;
 
     const isPlayingThisAlbum = isPlaying && currentTrack && album.tracks.some(t => t.id === currentTrack.id);
-    const isOwner = album?.is_owner;
+    // Use loose equality for safety between string/number IDs
+    const isOwner = user && album.is_owner === true;
 
     // Simulate dynamic background color (would normally extract from image)
     const bgColor = 'from-[#503e3e]'; 
@@ -60,23 +108,60 @@ const AlbumDetails = ({ onPlay, currentTrack, isPlaying, onTogglePlay }) => {
             {/* Hero Section */}
             <div className={`flex flex-col md:flex-row gap-6 p-8 items-end bg-gradient-to-b ${bgColor} to-[#121212] pt-24`}>
                 {/* Album Art */}
-                <div className="w-52 h-52 shadow-[0_4px_60px_rgba(0,0,0,0.5)] flex-shrink-0 bg-[#282828] group relative">
+                <div className="w-52 h-52 shadow-[0_4px_60px_rgba(0,0,0,0.5)] flex-shrink-0 bg-[#282828] group relative rounded-sm">
                     {album.album_art_path ? (
-                        <img src={`http://localhost:8000/${album.album_art_path}`} className="w-full h-full object-cover" />
+                        <img src={`http://localhost:8000/${album.album_art_path}`} className="w-full h-full object-cover rounded-sm" />
                     ) : (
                         <div className="w-full h-full flex items-center justify-center text-gray-500"><FaMusic size={64} /></div>
+                    )}
+                    {isOwner && (
+                        <label className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center cursor-pointer transition-opacity rounded-sm">
+                            <div className="text-center">
+                                <FaCamera size={24} className="mx-auto mb-2" />
+                                <span className="text-xs font-bold uppercase">Change Image</span>
+                            </div>
+                            <input
+                                type="file"
+                                accept="image/*"
+                                className="hidden"
+                                onChange={handleThumbnailUpload}
+                            />
+                        </label>
                     )}
                 </div>
 
                 {/* Metadata */}
-                <div className="flex flex-col gap-2 flex-grow">
+                <div className="flex flex-col gap-2 flex-grow min-w-0">
                     <span className="uppercase text-xs font-bold tracking-wider text-white">Album</span>
-                    <h1 className="text-5xl md:text-7xl font-black tracking-tight leading-none mb-4">{album.name}</h1>
-                    <div className="flex items-center gap-2 text-sm font-medium">
-                        {user && user.avatar_url && <img src={user.avatar_url} className="w-6 h-6 rounded-full" />}
-                        <span className="font-bold hover:underline cursor-pointer">{album.artist}</span>
-                        <span className="text-white/70">• {new Date().getFullYear()} • {album.track_count} songs, <span className="text-white/50">{Math.floor(album.total_duration / 60)} min {Math.floor(album.total_duration % 60)} sec</span></span>
-                    </div>
+                    
+                    {isEditing ? (
+                        <div className="flex flex-col gap-3 max-w-xl">
+                            <input 
+                                value={editForm.new_name}
+                                onChange={(e) => setEditForm({...editForm, new_name: e.target.value})}
+                                className="text-4xl font-black bg-white/10 p-2 rounded focus:outline-none focus:ring-2 focus:ring-white"
+                                placeholder="Album Name"
+                            />
+                            <input 
+                                value={editForm.artist}
+                                onChange={(e) => setEditForm({...editForm, artist: e.target.value})}
+                                className="text-xl font-bold bg-white/10 p-2 rounded focus:outline-none focus:ring-2 focus:ring-white"
+                                placeholder="Artist Name"
+                            />
+                            <div className="flex gap-2 mt-2">
+                                <button onClick={handleSave} className="bg-green-500 text-black px-4 py-1 rounded-full font-bold text-sm">Save</button>
+                                <button onClick={() => setIsEditing(false)} className="border border-white/30 text-white px-4 py-1 rounded-full font-bold text-sm hover:border-white">Cancel</button>
+                            </div>
+                        </div>
+                    ) : (
+                        <>
+                            <h1 className="text-5xl md:text-8xl font-black tracking-tight leading-none mb-4 truncate">{album.name}</h1>
+                            <div className="flex items-center gap-2 text-sm font-medium">
+                                <span className="font-bold hover:underline cursor-pointer">{album.artist}</span>
+                                <span className="text-white/70">• {new Date().getFullYear()} • {album.track_count} songs, <span className="text-white/50">{Math.floor(album.total_duration / 60)} min {Math.floor(album.total_duration % 60)} sec</span></span>
+                            </div>
+                        </>
+                    )}
                 </div>
             </div>
 
@@ -93,9 +178,22 @@ const AlbumDetails = ({ onPlay, currentTrack, isPlaying, onTogglePlay }) => {
                     <FaHeart size={32} />
                 </button>
 
-                {isOwner && (
-                    <div className="ml-auto flex gap-4">
-                        <button className="text-sm font-bold text-[#b3b3b3] hover:text-white border border-gray-600 rounded-full px-4 py-1">Edit</button>
+                {isOwner && !isEditing && (
+                    <div className="ml-auto flex gap-4 items-center">
+                        <button 
+                            onClick={() => setIsEditing(true)}
+                            className="text-gray-400 hover:text-white p-2"
+                            title="Edit Album"
+                        >
+                            <FaEdit size={24} />
+                        </button>
+                        <button 
+                            onClick={handleDelete}
+                            className="text-gray-400 hover:text-red-500 p-2"
+                            title="Delete Album"
+                        >
+                            <FaTrash size={20} />
+                        </button>
                     </div>
                 )}
             </div>

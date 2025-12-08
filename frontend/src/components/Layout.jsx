@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { Link } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import Player from './Player';
 import { useAuth } from '../context/AuthContext';
@@ -49,17 +50,19 @@ const Layout = ({ children, currentTrack, isPlaying, onTogglePlay, setIsPlaying,
                                     <span className="font-bold text-sm truncate max-w-[100px]">{user.name}</span>
                                 </button>
                                 {/* Dropdown Menu */}
-                                <div className="absolute right-0 top-full mt-2 w-48 bg-[#282828] rounded shadow-xl p-1 hidden group-hover:block border border-[#3e3e3e]">
-                                    <a href="/profile" className="block px-4 py-2 text-sm hover:bg-[#3e3e3e] rounded text-left">Profile</a>
-                                    <a href="/settings" className="block px-4 py-2 text-sm hover:bg-[#3e3e3e] rounded text-left">Settings</a>
-                                    <div className="h-px bg-[#3e3e3e] my-1"></div>
-                                    <button onClick={logout} className="block w-full px-4 py-2 text-sm hover:bg-[#3e3e3e] rounded text-left">Log out</button>
+                                <div className="absolute right-0 top-full pt-2 w-48 hidden group-hover:block z-50">
+                                    <div className="bg-[#282828] rounded shadow-xl p-1 border border-[#3e3e3e]">
+                                        <Link to="/profile" className="block px-4 py-2 text-sm hover:bg-[#3e3e3e] rounded text-left">Profile</Link>
+                                        <Link to="/settings" className="block px-4 py-2 text-sm hover:bg-[#3e3e3e] rounded text-left">Settings</Link>
+                                        <div className="h-px bg-[#3e3e3e] my-1"></div>
+                                        <button onClick={logout} className="block w-full px-4 py-2 text-sm hover:bg-[#3e3e3e] rounded text-left">Log out</button>
+                                    </div>
                                 </div>
                             </div>
                         ) : (
                             <div className="flex gap-6 items-center">
-                                <a href="/login" className="text-[#b3b3b3] hover:text-white font-bold hover:scale-105 transition-transform">Sign up</a>
-                                <a href="/login" className="bg-white text-black rounded-full px-8 py-3 font-bold text-sm hover:scale-105 transition-transform">Log in</a>
+                                <Link to="/login" className="text-[#b3b3b3] hover:text-white font-bold hover:scale-105 transition-transform">Sign up</Link>
+                                <Link to="/login" className="bg-white text-black rounded-full px-8 py-3 font-bold text-sm hover:scale-105 transition-transform">Log in</Link>
                             </div>
                         )}
                     </div>
@@ -67,7 +70,7 @@ const Layout = ({ children, currentTrack, isPlaying, onTogglePlay, setIsPlaying,
 
                 <main 
                     ref={mainRef}
-                    className="flex-1 overflow-y-auto scroll-smooth custom-scrollbar relative z-10"
+                    className="flex-1 overflow-y-auto scroll-smooth custom-scrollbar relative z-10 pt-16"
                     onScroll={handleScroll}
                 >
                     {children}

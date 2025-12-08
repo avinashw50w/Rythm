@@ -41,6 +41,7 @@ const usersRoutes = require('./routes/users');
 const playlistsRoutes = require('./routes/playlists');
 const albumsRoutes = require('./routes/albums');
 const artistsRoutes = require('./routes/artists');
+const searchRoutes = require('./routes/search');
 
 app.use('/auth', authRoutes);
 app.use('/tracks', tracksRoutes);
@@ -48,6 +49,7 @@ app.use('/users', usersRoutes);
 app.use('/playlists', playlistsRoutes);
 app.use('/albums', albumsRoutes);
 app.use('/artists', artistsRoutes);
+app.use('/search', searchRoutes);
 
 // Root endpoint
 app.get('/', (req, res) => {
