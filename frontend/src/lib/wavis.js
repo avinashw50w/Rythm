@@ -12,9 +12,15 @@ export default class Wavis {
         this.ctx = null;
         this.animationId = null;
         
+        // Visualizer state
+        this.hue = 0;
+        
         this.visualizers = {};
         this.currentVisualizer = 'bars';
         this.presets = this.getPresets();
+        
+        // Bind handlers once to avoid memory leaks
+        this.resize = this.resize.bind(this);
         
         // Initialize presets
         Object.keys(this.presets).forEach(key => {
@@ -31,7 +37,6 @@ export default class Wavis {
         this.analyser.fftSize = 2048;
         this.analyser.smoothingTimeConstant = 0.85; // Smoother transition
 
-        // Handle potential CORS issues with media elements
         try {
             // Check if source already exists to avoid error
             if (!this.source) {
@@ -51,12 +56,12 @@ export default class Wavis {
         this.canvas = canvas;
         this.ctx = canvas.getContext('2d');
         this.resize();
-        window.addEventListener('resize', this.resize.bind(this));
+        window.addEventListener('resize', this.resize);
     }
 
     unmount() {
         this.stop();
-        window.removeEventListener('resize', this.resize.bind(this));
+        window.removeEventListener('resize', this.resize);
         this.canvas = null;
         this.ctx = null;
     }
@@ -78,14 +83,6 @@ export default class Wavis {
         }
     }
 
-    nextVisualizer() {
-        const keys = Object.keys(this.visualizers);
-        const currentIndex = keys.indexOf(this.currentVisualizer);
-        const nextIndex = (currentIndex + 1) % keys.length;
-        this.currentVisualizer = keys[nextIndex];
-        return this.currentVisualizer;
-    }
-
     start() {
         this.init();
         if (this.audioCtx && this.audioCtx.state === 'suspended') {
@@ -104,12 +101,20 @@ export default class Wavis {
     }
 
     animate() {
-        this.animationId = requestAnimationFrame(this.animate.bind(this));
-        if (!this.ctx || !this.analyser) return;
+        if (!this.canvas || !this.ctx || !this.analyser) {
+            this.stop();
+            return;
+        }
 
+        this.animationId = requestAnimationFrame(this.animate.bind(this));
+
+        // Update Frequency Data
         this.analyser.getByteFrequencyData(this.dataArray);
         
-        // Clear canvas with a slight fade for trail effect if needed, but clean clear looks sharper for neon
+        // Update Color Hue
+        this.hue = (this.hue + 0.5) % 360;
+
+        // Clear Canvas
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
         
         // Background
@@ -120,96 +125,76 @@ export default class Wavis {
         const renderFn = this.visualizers[this.currentVisualizer];
         if (renderFn) {
             this.ctx.save();
-            renderFn(this.ctx, this.canvas, this.dataArray, this.bufferLength);
+            // Reset common styles
+            this.ctx.shadowBlur = 0;
+            this.ctx.globalCompositeOperation = 'source-over';
+            
+            renderFn(this.ctx, this.canvas, this.dataArray, this.bufferLength, this.hue);
             this.ctx.restore();
         }
     }
 
     getPresets() {
         return {
-            bars: (ctx, canvas, data, len) => {
-                // Inspired by Image 1: Mirrored bars with cyan/purple gradient
+            bars: (ctx, canvas, data, len, hue) => {
                 const cx = canvas.width / 2;
                 const cy = canvas.height / 2;
                 const barWidth = (canvas.width / len) * 8; 
                 let x = 0;
                 
-                // Neon Gradient
+                // Dynamic Gradient
                 const gradient = ctx.createLinearGradient(0, cy + 200, 0, cy - 200);
-                gradient.addColorStop(0, '#bd34fe'); // Purple
-                gradient.addColorStop(0.5, '#41d1ff'); // Blue
-                gradient.addColorStop(1, '#ffffff'); // White tip
+                gradient.addColorStop(0, `hsl(${hue}, 100%, 50%)`);
+                gradient.addColorStop(0.5, `hsl(${hue + 60}, 100%, 60%)`);
+                gradient.addColorStop(1, '#ffffff');
                 ctx.fillStyle = gradient;
                 
                 // Glow
-                ctx.shadowBlur = 15;
-                ctx.shadowColor = '#41d1ff';
+                ctx.shadowBlur = 10;
+                ctx.shadowColor = `hsl(${hue + 60}, 100%, 50%)`;
 
-                // Skip some high frequencies
                 const usefulLen = Math.floor(len * 0.7);
 
                 for (let i = 0; i < usefulLen; i++) {
                     const value = data[i];
-                    // Amplify height
                     const barHeight = (value / 255) * (canvas.height * 0.6);
                     
-                    // Mirrored Center
                     if (barHeight > 0) {
                         ctx.fillRect(cx + x, cy - barHeight / 2, barWidth, barHeight);
                         ctx.fillRect(cx - x - barWidth, cy - barHeight / 2, barWidth, barHeight);
                     }
-                    x += barWidth + 1; // Spacing
+                    x += barWidth + 1;
                 }
             },
             
-            wave: (ctx, canvas, data, len) => {
-                // Inspired by Image 2 & 4: Smooth neon flowing wave
+            wave: (ctx, canvas, data, len, hue) => {
                 ctx.lineWidth = 3;
-                ctx.strokeStyle = '#1ed760';
+                ctx.strokeStyle = `hsl(${hue}, 100%, 60%)`;
                 ctx.lineCap = 'round';
                 ctx.lineJoin = 'round';
                 
-                // Neon Glow
-                ctx.shadowBlur = 20;
-                ctx.shadowColor = '#1ed760';
+                ctx.shadowBlur = 15;
+                ctx.shadowColor = `hsl(${hue}, 100%, 50%)`;
 
                 ctx.beginPath();
                 
                 const sliceWidth = canvas.width / (len * 0.4);
                 let x = 0;
 
-                // Draw curve
                 for(let i = 0; i < len * 0.4; i++) {
                     const v = data[i] / 255.0;
-                    const y = (canvas.height / 2) + Math.sin(i * 0.15) * (v * canvas.height * 0.4);
+                    const y = (canvas.height / 2) + Math.sin(i * 0.1) * (v * canvas.height * 0.4);
                     
                     if (i === 0) ctx.moveTo(x, y);
-                    else {
-                        const prevX = x - sliceWidth;
-                        const prevY = (canvas.height / 2) + Math.sin((i - 1) * 0.15) * (data[i - 1] / 255.0 * canvas.height * 0.4);
-                        const cpX = (prevX + x) / 2;
-                        const cpY = (prevY + y) / 2;
-                        ctx.quadraticCurveTo(prevX, prevY, cpX, cpY);
-                    }
+                    else ctx.lineTo(x, y);
 
                     x += sliceWidth;
                 }
                 
                 ctx.stroke();
-                
-                // Fill gradient under wave
-                ctx.lineTo(canvas.width, canvas.height);
-                ctx.lineTo(0, canvas.height);
-                ctx.closePath();
-                const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
-                gradient.addColorStop(0, 'rgba(30, 215, 96, 0.0)');
-                gradient.addColorStop(1, 'rgba(30, 215, 96, 0.2)');
-                ctx.fillStyle = gradient;
-                ctx.fill();
             },
 
-            circle: (ctx, canvas, data, len) => {
-                // Inspired by Image 2 (Radial): Circular frequency spectrum
+            circle: (ctx, canvas, data, len, hue) => {
                 const cx = canvas.width / 2;
                 const cy = canvas.height / 2;
                 const radius = Math.min(cx, cy) * 0.3;
@@ -220,43 +205,32 @@ export default class Wavis {
                 const step = (Math.PI * 2) / bars;
                 
                 for (let i = 0; i < bars; i++) {
-                    // Map bars to frequency data, focusing on lower/mid
                     const dataIndex = Math.floor(i * (len / 2) / bars);
                     const value = data[dataIndex];
-                    const barHeight = (value / 255) * 180;
+                    const barHeight = (value / 255) * 200;
                     
                     ctx.save();
                     ctx.rotate(i * step);
                     
-                    // Rainbow Neon Aesthetic
-                    const hue = (i / bars) * 360;
-                    ctx.fillStyle = `hsl(${hue}, 100%, 60%)`;
-                    ctx.shadowBlur = 10;
-                    ctx.shadowColor = `hsl(${hue}, 100%, 50%)`;
+                    // Rotating colors
+                    const barHue = (hue + (i * 2)) % 360;
+                    ctx.fillStyle = `hsl(${barHue}, 100%, 60%)`;
                     
-                    // Draw bar extending outwards
-                    // Use small rectangles for a "digital" look
                     if (barHeight > 5) {
-                        ctx.fillRect(0, radius, 3, barHeight); 
-                    }
-                    
-                    // Inner reflection
-                    ctx.fillStyle = `hsla(${hue}, 100%, 70%, 0.2)`;
-                    if (barHeight > 5) {
-                        ctx.fillRect(0, radius - (barHeight * 0.2) - 5, 2, barHeight * 0.2);
+                        ctx.shadowBlur = 10;
+                        ctx.shadowColor = `hsl(${barHue}, 100%, 50%)`;
+                        ctx.fillRect(0, radius, 4, barHeight); 
                     }
                     
                     ctx.restore();
                 }
             },
 
-            dots: (ctx, canvas, data, len) => {
-                // Inspired by Image 3: Particles/Dots Matrix
+            dots: (ctx, canvas, data, len, hue) => {
                 const cx = canvas.width / 2;
                 const cy = canvas.height / 2;
                 const maxRadius = Math.min(cx, cy) * 0.9;
                 
-                // Calculate average bass for center pulse
                 let bass = 0;
                 for(let i=0; i<10; i++) bass += data[i];
                 bass = bass / 10;
@@ -264,95 +238,104 @@ export default class Wavis {
                 // Pulsing Background
                 ctx.beginPath();
                 ctx.arc(cx, cy, maxRadius * 0.2 + (bass * 0.8), 0, Math.PI * 2);
-                ctx.fillStyle = `rgba(138, 43, 226, ${bass/1200})`; // Violet pulse
+                ctx.fillStyle = `hsla(${hue + 180}, 100%, 50%, ${bass/1000})`;
                 ctx.fill();
 
                 const particles = 120;
                 for (let i = 0; i < particles; i++) {
-                    const dataIndex = Math.floor(i * (len / 3) / particles); // use lower third of freq
+                    const dataIndex = Math.floor(i * (len / 3) / particles);
                     const value = data[dataIndex];
                     
                     const angle = (i / particles) * Math.PI * 2;
-                    // Distance fluctuates with volume
                     const dist = (maxRadius * 0.3) + (value / 255) * (maxRadius * 0.5);
                     
                     const x = cx + Math.cos(angle) * dist;
                     const y = cy + Math.sin(angle) * dist;
                     
-                    const size = (value / 255) * 6;
+                    const size = (value / 255) * 8;
                     
                     ctx.beginPath();
                     ctx.arc(x, y, size, 0, Math.PI * 2);
-                    // Blue-Pink gradient coloring
-                    ctx.fillStyle = `hsl(${(i/particles)*60 + 280}, 100%, 70%)`;
-                    ctx.shadowBlur = 8;
-                    ctx.shadowColor = `hsl(${(i/particles)*60 + 280}, 100%, 50%)`;
+                    ctx.fillStyle = `hsl(${hue + (i)}, 100%, 70%)`;
+                    
+                    if (value > 150) {
+                        ctx.shadowBlur = 8;
+                        ctx.shadowColor = `hsl(${hue + (i)}, 100%, 50%)`;
+                    } else {
+                        ctx.shadowBlur = 0;
+                    }
+                    
                     ctx.fill();
                 }
             },
 
-            shockwave: (ctx, canvas, data, len) => {
-                // Dramatic bass shockwaves
+            shockwave: (ctx, canvas, data, len, hue) => {
                 const cx = canvas.width / 2;
                 const cy = canvas.height / 2;
                 
                 // Calculate bass energy
                 let bass = 0;
-                for(let i=0; i<10; i++) bass += data[i];
-                bass /= 10;
+                for(let i=0; i<20; i++) bass += data[i];
+                bass /= 20;
                 const normBass = bass / 255; // 0 to 1
-                const scale = 1 + normBass * 0.5;
 
                 ctx.translate(cx, cy);
                 
-                // Inner solid core
+                // 1. Core Energy Ball
                 ctx.beginPath();
-                ctx.arc(0, 0, 60 * scale, 0, Math.PI * 2);
-                ctx.fillStyle = `rgba(255, 255, 255, ${normBass})`;
-                ctx.shadowBlur = 40 * normBass;
-                ctx.shadowColor = '#bd34fe'; // Purple glow
+                const coreSize = 50 + (normBass * 100);
+                ctx.arc(0, 0, coreSize, 0, Math.PI * 2);
+                ctx.fillStyle = `hsl(${hue}, 100%, 60%)`;
+                ctx.shadowBlur = 30;
+                ctx.shadowColor = `hsl(${hue}, 100%, 50%)`;
                 ctx.fill();
-
-                // Concentric Rings
-                ctx.lineWidth = 3;
-                ctx.shadowBlur = 20;
                 
-                // Ring 1
+                // 2. Mid-Range Reactive Ring (Rotating)
+                ctx.save();
+                ctx.rotate(Date.now() / 2000); // Slow constant rotation
                 ctx.beginPath();
-                ctx.arc(0, 0, 100 * scale, 0, Math.PI * 2);
-                ctx.strokeStyle = '#41d1ff';
-                ctx.shadowColor = '#41d1ff';
-                ctx.stroke();
+                const ringRadius = coreSize + 40;
                 
-                // Ring 2 (Deformed)
-                ctx.beginPath();
-                // Create a slightly jagged circle based on freq data
-                for (let i = 0; i < 360; i+=10) {
-                    const angle = (i * Math.PI) / 180;
-                    const val = data[i % 60]; 
-                    const r = (140 * scale) + (val * 0.2);
+                // Draw a jagged circle based on frequency
+                const segments = 120;
+                for (let i = 0; i <= segments; i++) {
+                    const angle = (i / segments) * Math.PI * 2;
+                    // Map segment to frequency data (mid-range: 40-160)
+                    const dataIdx = 40 + i; 
+                    const val = data[dataIdx] || 0;
+                    
+                    // Radius variation
+                    const r = ringRadius + (val * 0.5);
                     const x = Math.cos(angle) * r;
                     const y = Math.sin(angle) * r;
-                    if (i===0) ctx.moveTo(x,y);
-                    else ctx.lineTo(x,y);
+                    
+                    if (i === 0) ctx.moveTo(x, y);
+                    else ctx.lineTo(x, y);
                 }
                 ctx.closePath();
-                ctx.strokeStyle = `rgba(189, 52, 254, 0.8)`;
-                ctx.shadowColor = '#bd34fe';
+                ctx.lineWidth = 4;
+                ctx.strokeStyle = `hsl(${hue + 180}, 100%, 70%)`;
+                ctx.shadowBlur = 15;
+                ctx.shadowColor = `hsl(${hue + 180}, 100%, 60%)`;
                 ctx.stroke();
+                ctx.restore();
 
-                // Beams/Rays
-                const rays = 16;
-                for(let i=0; i<rays; i++) {
+                // 3. High Frequency Bursts/Beams
+                const beams = 12;
+                for(let i=0; i<beams; i++) {
                     ctx.save();
-                    ctx.rotate((Math.PI * 2 / rays) * i + (Date.now() / 1000)); // Rotate slowly
-                    const rayLen = data[i * 4] * 2;
+                    // Static angles
+                    ctx.rotate((Math.PI * 2 / beams) * i);
                     
-                    ctx.fillStyle = '#fff';
-                    // Draw beam
-                    if (rayLen > 50) {
-                        ctx.globalAlpha = rayLen / 512; // fade out
-                        ctx.fillRect(180, -1, rayLen * 0.8, 2);
+                    // High freq data
+                    const highFreqVal = data[200 + i * 5]; 
+                    if (highFreqVal > 100) {
+                        const beamLen = highFreqVal * 1.5;
+                        ctx.fillStyle = `hsla(${hue + 60}, 100%, 80%, ${highFreqVal/255})`;
+                        ctx.shadowBlur = 20;
+                        ctx.shadowColor = 'white';
+                        // Draw beam extending from ring
+                        ctx.fillRect(ringRadius + 20, -2, beamLen, 4);
                     }
                     ctx.restore();
                 }
