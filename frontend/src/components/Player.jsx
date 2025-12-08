@@ -64,14 +64,16 @@ const Player = ({ currentTrack, isPlaying, setIsPlaying, onTogglePlay, onNext, o
     // Handle Fullscreen Visualizer
     useEffect(() => {
         if (isFullScreen && wavisRef.current && canvasRef.current) {
-            setTimeout(() => {
-                if (canvasRef.current) {
-                    wavisRef.current.mount(canvasRef.current);
-                    wavisRef.current.start();
-                    // Ensure visualizer is synced
-                    wavisRef.current.setVisualizer(visualizerName);
-                }
-            }, 100);
+            // Determine if we should start the visualizer based on the selected mode
+            if (visualizerName !== 'none' && visualizerName !== 'album art') {
+                setTimeout(() => {
+                    if (canvasRef.current) {
+                        wavisRef.current.mount(canvasRef.current);
+                        wavisRef.current.start();
+                        wavisRef.current.setVisualizer(visualizerName);
+                    }
+                }, 100);
+            }
         }
 
         return () => {
@@ -81,17 +83,44 @@ const Player = ({ currentTrack, isPlaying, setIsPlaying, onTogglePlay, onNext, o
         };
     }, [isFullScreen]);
 
+    // Handle Visualizer State Changes
+    useEffect(() => {
+        if (!wavisRef.current || !isFullScreen) return;
+
+        if (visualizerName === 'none' || visualizerName === 'album art') {
+            wavisRef.current.stop();
+            // Clear canvas manually
+            const ctx = canvasRef.current?.getContext('2d');
+            if (ctx && canvasRef.current) {
+                ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+            }
+        } else {
+            // Ensure it's mounted if switching back from none/album art
+            if (canvasRef.current) {
+                wavisRef.current.mount(canvasRef.current);
+                wavisRef.current.setVisualizer(visualizerName);
+                if (isPlaying) wavisRef.current.start();
+            }
+        }
+    }, [visualizerName, isFullScreen, isPlaying]);
+
     // Handle Playback State for Visualizer
     useEffect(() => {
         if (audioRef.current) {
             if (isPlaying) {
                 audioRef.current.play().catch(e => console.error("Playback failed:", e));
-                if (isFullScreen && wavisRef.current) wavisRef.current.start();
+                if (isFullScreen && wavisRef.current && visualizerName !== 'none' && visualizerName !== 'album art') {
+                    wavisRef.current.start();
+                }
             } else {
                 audioRef.current.pause();
+                // We don't stop the visualizer loop on pause to keep the last frame or let it idle if we wanted
+                // but Wavis.stop() kills the loop. Let's leave it running or stop it?
+                // Usually visualizers stop moving when audio pauses. Wavis relies on audio data.
+                // If audio pauses, frequency data becomes 0. The loop continues drawing 0s.
             }
         }
-    }, [isPlaying, currentTrack, isFullScreen]);
+    }, [isPlaying, currentTrack, isFullScreen, visualizerName]);
 
     // Auto-hide controls
     useEffect(() => {
@@ -120,9 +149,6 @@ const Player = ({ currentTrack, isPlaying, setIsPlaying, onTogglePlay, onNext, o
 
     const selectVisualizer = (name) => {
         setVisualizerName(name);
-        if (wavisRef.current) {
-            wavisRef.current.setVisualizer(name);
-        }
         setShowVizMenu(false);
     };
 
@@ -169,7 +195,7 @@ const Player = ({ currentTrack, isPlaying, setIsPlaying, onTogglePlay, onNext, o
         return `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
     };
 
-    const visualizerOptions = ['bars', 'wave', 'circle', 'dots', 'shockwave'];
+    const visualizerOptions = ['none', 'album art', 'bars', 'wave', 'circle', 'dots', 'shockwave'];
 
     if (!currentTrack) return null;
 
@@ -194,7 +220,28 @@ const Player = ({ currentTrack, isPlaying, setIsPlaying, onTogglePlay, onNext, o
                     />
                 )}
 
-                <canvas ref={canvasRef} className="absolute inset-0 w-full h-full z-10" />
+                {/* Album Art Mode */}
+                {visualizerName === 'album art' && (
+                    <div className="absolute inset-0 flex items-center justify-center z-10">
+                        {currentTrack.album_art_path ? (
+                            <img 
+                                src={`http://localhost:8000/${currentTrack.album_art_path}`} 
+                                alt="Album Art" 
+                                className="max-w-[70vw] max-h-[70vh] w-auto h-auto rounded-lg shadow-[0_0_100px_rgba(0,0,0,0.8)] object-contain"
+                            />
+                        ) : (
+                            <div className="w-[40vh] h-[40vh] bg-neutral-800 rounded-lg flex items-center justify-center shadow-2xl">
+                                <span className="text-6xl">♪</span>
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {/* Canvas for Wavis (Hidden if None or Album Art) */}
+                <canvas 
+                    ref={canvasRef} 
+                    className={`absolute inset-0 w-full h-full z-10 ${visualizerName === 'none' || visualizerName === 'album art' ? 'hidden' : ''}`} 
+                />
                 
                 {/* Visualizer Controls (Top Right) */}
                 <div className={`absolute top-8 right-8 z-20 flex gap-4 transition-opacity duration-500 ${showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
